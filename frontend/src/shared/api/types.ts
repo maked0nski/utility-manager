@@ -44,3 +44,30 @@ export interface BillingHistoryItem {
   details: Record<string, ApiValue>;
   created_at: string;
 }
+
+export type UtilityType =
+  | "electricity"
+  | "water"
+  | "gas"
+  | "heating"
+  | "sewage"
+  | "internet"
+  | "other";
+
+export interface MeterItem {
+  id: number;
+  apartment_id?: number;
+  service_name: string;
+  utility_type: UtilityType;
+  serial_number?: string | null;
+  initial_reading?: string | number;
+  installed_at?: string;
+}
+
+export interface MeterUpsertForm {
+  service_name: string;
+  utility_type: UtilityType;
+  serial_number: string;
+  initial_reading: string;
+  installed_at: string;
+}

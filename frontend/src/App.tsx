@@ -19,6 +19,7 @@ import { useDashboardData } from "@/features/dashboard/hooks/use-dashboard-data"
 import { useDashboardStateSync } from "@/features/dashboard/hooks/use-dashboard-state-sync";
 import { useSortedRows } from "@/features/calculation/hooks/use-sorted-rows";
 import { usePropertyActions } from "@/features/properties/hooks/use-property-actions";
+import { useMeterActions } from "@/features/properties/hooks/use-meter-actions";
 import { PropertyDrawer } from "@/features/properties/components/PropertyDrawer";
 import { DashboardContent } from "@/features/layout/components/DashboardContent";
 import { AppModals } from "@/features/layout/components/AppModals";
@@ -26,7 +27,7 @@ import { useAdminUserActions } from "@/features/auth/hooks/use-admin-user-action
 import { useTariffActions } from "@/features/tariffs/hooks/use-tariff-actions";
 import { useTariffFormState } from "@/features/tariffs/hooks/use-tariff-form-state";
 import { useAuthActions } from "@/features/auth/hooks/use-auth-actions";
-import type { BillingHistoryItem } from "@/shared/api/types";
+import type { BillingHistoryItem, MeterUpsertForm } from "@/shared/api/types";
 
 type SelectedApartment = {
   apartment_id: number;
@@ -120,6 +121,14 @@ export default function App() {
     setAssignExisting,
   } = useTenantFormState();
   const [ap, setAp] = useState({ address: "" });
+  const [meterForm, setMeterForm] = useState<MeterUpsertForm>({
+    service_name: "",
+    utility_type: "other",
+    serial_number: "",
+    initial_reading: "",
+    installed_at: "",
+  });
+  const [editingMeterId, setEditingMeterId] = useState<number | null>(null);
   const confirmActionRef = useRef<null | (() => void | Promise<void>)>(null);
   const {
     apartmentsQuery,
@@ -140,16 +149,23 @@ export default function App() {
     pushToast,
   });
   const { sortedRows, toggleSort, sortIcon, resetSortDefault } = useSortedRows(detail?.rows || []);
-  const meters = (detailBundleQuery.data?.meters as Array<{
-    id: number;
-    service_name: string;
-    serial_number?: string | null;
-  }>) || [];
+  const meters = detailBundleQuery.data?.meters || [];
 
   const totals = useMemo(() => calculatePortfolioTotals(props), [props]);
   const accr = useMemo(() => calculateAccrualTotal(detail?.rows || []), [detail?.rows]);
 
   useEffect(() => { if (sessionError) setErr(sessionError); }, [sessionError]);
+  useEffect(() => {
+    setEditingMeterId(null);
+    setMeterForm({
+      service_name: "",
+      utility_type: "other",
+      serial_number: "",
+      initial_reading: "",
+      installed_at: "",
+    });
+  }, [sel?.apartment_id]);
+
   const confirmRun = (
     title: string,
     message: string,
@@ -273,6 +289,17 @@ export default function App() {
     queryClient,
     reload,
   });
+  const { submitMeter, startEditMeter, askDeleteMeter, resetMeterForm } = useMeterActions({
+    tok,
+    apartmentId: sel?.apartment_id,
+    meterForm,
+    editingMeterId,
+    setMeterForm,
+    setEditingMeterId,
+    pushToast,
+    confirmRun,
+    reload,
+  });
 
   if (!tok) return <LoginScreen cred={cred} setCred={setCred} login={login} boot={boot} err={err} />;
 
@@ -346,7 +373,6 @@ export default function App() {
         newTar={newTar}
         setNewTar={setNewTar}
         createTariff={createTariff}
-        meters={meters}
         own={own}
         setOwn={setOwn}
         addOwner={addOwner}
@@ -361,6 +387,14 @@ export default function App() {
         delAp={delAp}
         ap={ap}
         setAp={setAp}
+        meters={meters}
+        meterForm={meterForm}
+        setMeterForm={setMeterForm}
+        editingMeterId={editingMeterId}
+        submitMeter={submitMeter}
+        startEditMeter={startEditMeter}
+        askDeleteMeter={askDeleteMeter}
+        resetMeterForm={resetMeterForm}
       />
       <AppModals
         payModal={payModal}

@@ -2,7 +2,7 @@ import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import { SELECTED_APARTMENT_KEY } from "@/shared/constants/app";
-import type { BillingHistoryItem } from "@/shared/api/types";
+import type { BillingHistoryItem, MeterItem } from "@/shared/api/types";
 
 type Period = { year: number; month: number };
 type ApartmentSummary = {
@@ -14,7 +14,7 @@ type ApartmentSummary = {
 type DetailBundle = {
   d: { address?: string; apartment_id: number; utility_balance: Record<string, string>; tenant?: unknown };
   t: unknown[];
-  meters: Array<{ id: number; service_name: string; serial_number?: string | null }>;
+  meters: MeterItem[];
   o: unknown[];
   m: unknown[];
   allTenants: unknown[];

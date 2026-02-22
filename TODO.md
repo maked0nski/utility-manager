@@ -8,8 +8,9 @@
 - [x] Прибрати з frontend legacy entry-файли поза `src/`.
 - [x] Узгодити backend-конфіг для читання env з root (`.env` / `../.env`) без падіння на зайвих змінних.
 - [x] Вирівняти frontend ESLint/TS-конфіг до стабільного прохідного стану.
-- [ ] Ініціалізувати git в `utility-manager` і перейти на feature-гілку для подальшої розробки.
-- [ ] Додати єдиний CI workflow для `backend tests + frontend lint/typecheck/test/build`.
+- [x] Ініціалізувати git в `utility-manager` і перейти на feature-гілку для подальшої розробки.
+- [x] Додати єдиний CI workflow для `backend tests + frontend lint/typecheck/test/build`.
+- [x] Додати root scripts для щоденної розробки (`check:all`, `dev:up`, `dev:down`).
 
 ## P0 — Стабілізація поточної версії
 - [x] Прогнати повний smoke-тест сценарію: вересень 2024 -> поточний місяць.

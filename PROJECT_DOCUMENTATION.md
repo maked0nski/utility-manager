@@ -194,6 +194,11 @@ utility-manager/
 - frontend: `frontend/src/**/*.test.*` (`vitest`)
 - quality gates frontend: `lint + typecheck + test + build`
 
+Root automation scripts:
+- `npm run check:all` -> backend `pytest` + frontend `lint/typecheck/test/build`
+- `npm run dev:up` -> `docker compose up -d --build`
+- `npm run dev:down` -> `docker compose down`
+
 ---
 
 ## 6. Ключові сутності даних (спрощено)

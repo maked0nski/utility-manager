@@ -11,6 +11,9 @@
 - [x] Ініціалізувати git в `utility-manager` і перейти на feature-гілку для подальшої розробки.
 - [x] Додати єдиний CI workflow для `backend tests + frontend lint/typecheck/test/build`.
 - [x] Додати root scripts для щоденної розробки (`check:all`, `dev:up`, `dev:down`).
+- [x] Прибрати локальні сміттєві артефакти backend (`node_modules`, `.pytest_cache`).
+- [x] Додати `.gitattributes` для стабільних line endings у кросплатформеній команді.
+- [x] Перезібрати docker-стек із очисткою застарілих ресурсів без видалення БД volume.
 
 ## P0 — Стабілізація поточної версії
 - [x] Прогнати повний smoke-тест сценарію: вересень 2024 -> поточний місяць.

@@ -1,0 +1,10 @@
+{
+  "name": "utility-manager",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "check:all": "powershell -ExecutionPolicy Bypass -File ./scripts/check-all.ps1",
+    "dev:up": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-up.ps1",
+    "dev:down": "powershell -ExecutionPolicy Bypass -File ./scripts/dev-down.ps1"
+  }
+}

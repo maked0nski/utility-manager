@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+pymysql
+pydantic
+pydantic-settings
+python-dotenv
+pytest
+httpx
+openpyxl
+cryptography
+python-multipart

@@ -8,6 +8,15 @@ import { OwnerCostsTab } from "@/features/expenses/components/OwnerCostsTab";
 import { ReportTab } from "@/features/report/components/ReportTab";
 
 type TabKey = "calc" | "tenant" | "tariffs" | "owner" | "report" | "property";
+const UTILITY_TYPE_LABELS: Record<MeterUpsertForm["utility_type"], string> = {
+  electricity: "Електроенергія",
+  water: "Вода",
+  gas: "Газ",
+  heating: "Опалення",
+  sewage: "Водовідведення",
+  internet: "Інтернет",
+  other: "Інше",
+};
 
 export function DashboardContent({
   apartmentsQuery,
@@ -333,7 +342,7 @@ export function DashboardContent({
                       {meters.map((meter) => (
                         <tr key={meter.id}>
                           <td>{meter.service_name}</td>
-                          <td>{meter.utility_type}</td>
+                          <td>{UTILITY_TYPE_LABELS[meter.utility_type] || meter.utility_type}</td>
                           <td>{meter.serial_number || "—"}</td>
                           <td>{meter.initial_reading ?? "0"}</td>
                           <td>{meter.installed_at || "—"}</td>
@@ -386,6 +395,9 @@ export function DashboardContent({
                   <In
                     tip="Початковий показник"
                     placeholder="0"
+                    type="number"
+                    min="0"
+                    step="0.001"
                     value={meterForm.initial_reading}
                     onChange={(e) => setMeterForm((s) => ({ ...s, initial_reading: e.target.value }))}
                   />

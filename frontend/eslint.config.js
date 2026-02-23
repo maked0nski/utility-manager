@@ -36,4 +36,12 @@ export default [
       "no-undef": "off",
     },
   },
+  {
+    files: ["src/features/properties/**/*.{ts,tsx}"],
+    rules: {
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "no-undef": "error",
+    },
+  },
 ];

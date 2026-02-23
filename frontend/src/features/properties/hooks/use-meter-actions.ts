@@ -4,6 +4,26 @@ import type { MeterItem, MeterUpsertForm } from "@/shared/api/types";
 
 type ConfirmRun = (title: string, message: string, action: () => void | Promise<void>) => void;
 
+function humanizeMeterApiError(error: Error, fallback: string): string {
+  const msg = (error?.message || "").toLowerCase();
+  if (msg.includes("used in tariffs")) {
+    return "Лічильник прив'язаний до тарифів. Спершу змініть або видаліть ці тарифи.";
+  }
+  if (msg.includes("not found")) {
+    return "Лічильник або об'єкт не знайдено.";
+  }
+  if (msg.includes("conflict")) {
+    return "Конфлікт даних. Оновіть сторінку і повторіть дію.";
+  }
+  return error.message || fallback;
+}
+
+function parseReading(input: string): number {
+  const normalized = (input || "").trim().replace(",", ".");
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : Number.NaN;
+}
+
 export function useMeterActions({
   tok,
   apartmentId,
@@ -46,7 +66,7 @@ export function useMeterActions({
           service_name: meterForm.service_name,
           utility_type: meterForm.utility_type,
           serial_number: meterForm.serial_number || null,
-          initial_reading: Number(meterForm.initial_reading),
+          initial_reading: parseReading(meterForm.initial_reading),
           installed_at: meterForm.installed_at,
         }),
       });
@@ -56,7 +76,7 @@ export function useMeterActions({
       resetMeterForm();
       await reload();
     },
-    onError: (e: Error) => pushToast(e.message || "Не вдалося додати лічильник", "error"),
+    onError: (e: Error) => pushToast(humanizeMeterApiError(e, "Не вдалося додати лічильник"), "error"),
   });
 
   const updateMeterMutation = useMutation({
@@ -68,7 +88,7 @@ export function useMeterActions({
           service_name: meterForm.service_name,
           utility_type: meterForm.utility_type,
           serial_number: meterForm.serial_number || null,
-          initial_reading: Number(meterForm.initial_reading),
+          initial_reading: parseReading(meterForm.initial_reading),
           installed_at: meterForm.installed_at,
         }),
       });
@@ -78,7 +98,7 @@ export function useMeterActions({
       resetMeterForm();
       await reload();
     },
-    onError: (e: Error) => pushToast(e.message || "Не вдалося оновити лічильник", "error"),
+    onError: (e: Error) => pushToast(humanizeMeterApiError(e, "Не вдалося оновити лічильник"), "error"),
   });
 
   const deleteMeterMutation = useMutation({
@@ -87,7 +107,7 @@ export function useMeterActions({
       pushToast("Лічильник видалено", "success");
       await reload();
     },
-    onError: (e: Error) => pushToast(e.message || "Не вдалося видалити лічильник", "error"),
+    onError: (e: Error) => pushToast(humanizeMeterApiError(e, "Не вдалося видалити лічильник"), "error"),
   });
 
   const submitMeter = async () => {
@@ -97,6 +117,15 @@ export function useMeterActions({
     }
     if (!meterForm.initial_reading.trim()) {
       pushToast("Вкажіть початковий показник", "error");
+      return;
+    }
+    const reading = parseReading(meterForm.initial_reading);
+    if (!Number.isFinite(reading)) {
+      pushToast("Початковий показник має бути числом", "error");
+      return;
+    }
+    if (reading < 0) {
+      pushToast("Початковий показник не може бути від'ємним", "error");
       return;
     }
     if (!meterForm.installed_at.trim()) {

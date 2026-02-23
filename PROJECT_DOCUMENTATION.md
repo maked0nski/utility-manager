@@ -29,6 +29,7 @@
   - тарифи,
   - показники лічильників (включно з реєстрами `register_name`).
  - У вкладці `Об'єкт` додано окремий блок "Встановлені лічильники" зі списком та CRUD-операціями.
+ - UX-polish для лічильників: читабельні назви типів, валідація числового поля, дружні помилки API (конфлікт/не знайдено).
 - Розрахунок помісячної комуналки (fixed + metered сервіси).
 - Підтримка кількох тарифів для одного лічильника через `meter_id` + `meter_register`.
 - Підтримка похідних metered-послуг через `source_service_name` (наприклад водовідведення від водопостачання).
@@ -193,7 +194,8 @@ utility-manager/
 Тестова стратегія:
 - backend: `backend/tests` (`pytest`)
 - frontend: `frontend/src/**/*.test.*` (`vitest`)
-- quality gates frontend: `lint + typecheck + test + build`
+ - quality gates frontend: `lint + typecheck + test + build`
+ - quality hardening: ESLint посилюється поетапно (початок із модуля `features/properties`).
 
 Root automation scripts:
 - `npm run check:all` -> backend `pytest` + frontend `lint/typecheck/test/build`

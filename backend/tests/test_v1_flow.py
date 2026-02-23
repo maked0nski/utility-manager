@@ -248,3 +248,54 @@ def test_meter_update_and_delete_flow():
     listed_after = client.get(f"/admin/apartments/{apartment_id}/meters", headers=headers)
     assert listed_after.status_code == 200
     assert listed_after.json() == []
+
+
+def test_meter_delete_conflict_when_bound_to_tariff():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Meter bound conflict address"},
+        headers=headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    meter = client.post(
+        "/admin/meters",
+        json={
+            "apartment_id": apartment_id,
+            "service_name": "Електроенергія день",
+            "utility_type": "electricity",
+            "serial_number": "E-409",
+            "initial_reading": "0",
+            "installed_at": "2026-01-01",
+        },
+        headers=headers,
+    )
+    assert meter.status_code == 201
+    meter_id = meter.json()["id"]
+
+    tariff = client.post(
+        "/admin/tariffs",
+        json={
+            "apartment_id": apartment_id,
+            "service_name": "Електроенергія день",
+            "charge_mode": "metered",
+            "utility_type": "electricity",
+            "price_per_unit": "4.5",
+            "unit_name": "kWh",
+            "meter_id": meter_id,
+            "meter_register": "total",
+            "effective_from": "2026-01-01",
+        },
+        headers=headers,
+    )
+    assert tariff.status_code == 201
+
+    remove = client.delete(f"/admin/meters/{meter_id}", headers=headers)
+    assert remove.status_code == 409
+    assert "used in tariffs" in remove.json()["detail"]

@@ -44,4 +44,24 @@ export default [
       "no-undef": "error",
     },
   },
+  {
+    files: ["src/features/tariffs/**/*.{ts,tsx}"],
+    rules: {
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "no-undef": "error",
+    },
+  },
+  {
+    files: [
+      "src/features/layout/**/*.{ts,tsx}",
+      "src/features/dashboard/**/*.{ts,tsx}",
+    ],
+    ignores: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "react-hooks/exhaustive-deps": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "no-undef": "error",
+    },
+  },
 ];

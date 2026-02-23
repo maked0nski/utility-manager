@@ -107,10 +107,10 @@
     - [x] додано TS-містки типів для `shared/ui/*.jsx` через `ui-jsx-bridges.d.ts`
 
 ## P1 — Якість коду (поетапне посилення)
-- [~] Поступово посилювати ESLint правила замість глобального `off`.
+- [x] Поступово посилювати ESLint правила замість глобального `off` (етапи 1-3 для feature-модулів завершено).
 - [x] Етап 1: посилені правила для `frontend/src/features/properties/**/*` (`react-hooks/exhaustive-deps`, `@typescript-eslint/no-unused-vars`, `no-undef`).
-- [ ] Етап 2: поширити строгі правила на `features/tariffs`.
-- [ ] Етап 3: поширити строгі правила на `features/layout` і `features/dashboard`.
+- [x] Етап 2: поширити строгі правила на `features/tariffs`.
+- [x] Етап 3: поширити строгі правила на `features/layout` і `features/dashboard`.
 
 ## P2 — Автоматизація
 - [ ] Worker-контейнер для оновлення тарифів постачальників.

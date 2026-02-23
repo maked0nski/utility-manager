@@ -195,7 +195,7 @@ utility-manager/
 - backend: `backend/tests` (`pytest`)
 - frontend: `frontend/src/**/*.test.*` (`vitest`)
  - quality gates frontend: `lint + typecheck + test + build`
- - quality hardening: ESLint посилюється поетапно (початок із модуля `features/properties`).
+ - quality hardening: ESLint поетапно посилено для `features/properties`, `features/tariffs`, `features/layout`, `features/dashboard` з чистим `lint --max-warnings=0`.
 
 Root automation scripts:
 - `npm run check:all` -> backend `pytest` + frontend `lint/typecheck/test/build`

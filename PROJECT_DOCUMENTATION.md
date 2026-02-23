@@ -22,12 +22,14 @@
 - JWT-авторизація адміна.
 - Bootstrap-підказка дефолтного адміна (`admin/admin123`) + зміна пароля.
 - Політика пароля (мінімальна складність) + рекомендація ротації пароля у `bootstrap-info`.
-- CRUD базових сутностей:
+ - CRUD базових сутностей:
   - нерухомість,
   - орендар,
   - призначення орендаря (tenancy),
   - тарифи,
   - показники лічильників (включно з реєстрами `register_name`).
+ - У вкладці `Об'єкт` додано окремий блок "Встановлені лічильники" зі списком та CRUD-операціями.
+ - UX-polish для лічильників: читабельні назви типів, валідація числового поля, дружні помилки API (конфлікт/не знайдено).
 - Розрахунок помісячної комуналки (fixed + metered сервіси).
 - Підтримка кількох тарифів для одного лічильника через `meter_id` + `meter_register`.
 - Підтримка похідних metered-послуг через `source_service_name` (наприклад водовідведення від водопостачання).
@@ -192,7 +194,13 @@ utility-manager/
 Тестова стратегія:
 - backend: `backend/tests` (`pytest`)
 - frontend: `frontend/src/**/*.test.*` (`vitest`)
-- quality gates frontend: `lint + typecheck + test + build`
+ - quality gates frontend: `lint + typecheck + test + build`
+ - quality hardening: ESLint поетапно посилено для `features/properties`, `features/tariffs`, `features/layout`, `features/dashboard` з чистим `lint --max-warnings=0`.
+
+Root automation scripts:
+- `npm run check:all` -> backend `pytest` + frontend `lint/typecheck/test/build`
+- `npm run dev:up` -> `docker compose up -d --build`
+- `npm run dev:down` -> `docker compose down`
 
 ---
 

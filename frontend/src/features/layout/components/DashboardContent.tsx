@@ -1,5 +1,6 @@
-import { In } from "@/shared/ui/form-controls";
+import { In, Se } from "@/shared/ui/form-controls";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { MeterItem, MeterUpsertForm } from "@/shared/api/types";
 import { CalculationTab } from "@/features/calculation/components/CalculationTab";
 import { TenantTab } from "@/features/tenants/components/TenantTab";
 import { TariffsTab } from "@/features/tariffs/components/TariffsTab";
@@ -7,6 +8,15 @@ import { OwnerCostsTab } from "@/features/expenses/components/OwnerCostsTab";
 import { ReportTab } from "@/features/report/components/ReportTab";
 
 type TabKey = "calc" | "tenant" | "tariffs" | "owner" | "report" | "property";
+const UTILITY_TYPE_LABELS: Record<MeterUpsertForm["utility_type"], string> = {
+  electricity: "Електроенергія",
+  water: "Вода",
+  gas: "Газ",
+  heating: "Опалення",
+  sewage: "Водовідведення",
+  internet: "Інтернет",
+  other: "Інше",
+};
 
 export function DashboardContent({
   apartmentsQuery,
@@ -69,6 +79,13 @@ export function DashboardContent({
   delAp,
   ap,
   setAp,
+  meterForm,
+  setMeterForm,
+  editingMeterId,
+  submitMeter,
+  startEditMeter,
+  askDeleteMeter,
+  resetMeterForm,
 }: {
   apartmentsQuery: { isLoading?: boolean };
   detailBundleQuery: { isFetching?: boolean };
@@ -115,7 +132,7 @@ export function DashboardContent({
   newTar: any;
   setNewTar: (v: any) => void;
   createTariff: () => Promise<void>;
-  meters: Array<{ id: number; service_name: string; serial_number?: string | null }>;
+  meters: MeterItem[];
   own: any;
   setOwn: (v: any) => void;
   addOwner: () => Promise<void>;
@@ -130,6 +147,13 @@ export function DashboardContent({
   delAp: () => Promise<void>;
   ap: { address: string };
   setAp: Dispatch<SetStateAction<{ address: string }>>;
+  meterForm: MeterUpsertForm;
+  setMeterForm: Dispatch<SetStateAction<MeterUpsertForm>>;
+  editingMeterId: number | null;
+  submitMeter: () => Promise<void>;
+  startEditMeter: (meter: MeterItem) => void;
+  askDeleteMeter: (meter: MeterItem) => void;
+  resetMeterForm: () => void;
 }) {
   return (
     <section className="card content">
@@ -292,6 +316,108 @@ export function DashboardContent({
                 <button className="danger" onClick={delAp}>
                   Видалити
                 </button>
+              </div>
+              <div className="subcard full-row">
+                <h4>Встановлені лічильники</h4>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Послуга</th>
+                        <th>Тип</th>
+                        <th>Серійний номер</th>
+                        <th>Початковий показник</th>
+                        <th>Дата встановлення</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {meters.length === 0 && (
+                        <tr>
+                          <td colSpan={6}>
+                            <span className="helper">Лічильників ще немає.</span>
+                          </td>
+                        </tr>
+                      )}
+                      {meters.map((meter) => (
+                        <tr key={meter.id}>
+                          <td>{meter.service_name}</td>
+                          <td>{UTILITY_TYPE_LABELS[meter.utility_type] || meter.utility_type}</td>
+                          <td>{meter.serial_number || "—"}</td>
+                          <td>{meter.initial_reading ?? "0"}</td>
+                          <td>{meter.installed_at || "—"}</td>
+                          <td>
+                            <div className="row-actions">
+                              <button className="secondary icon-btn" onClick={() => startEditMeter(meter)}>
+                                ✎
+                              </button>
+                              <button className="danger icon-btn" onClick={() => askDeleteMeter(meter)}>
+                                🗑
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="forms-grid top-gap">
+                  <In
+                    tip="Послуга лічильника"
+                    placeholder="Назва послуги"
+                    value={meterForm.service_name}
+                    onChange={(e) => setMeterForm((s) => ({ ...s, service_name: e.target.value }))}
+                  />
+                  <Se
+                    tip="Тип лічильника"
+                    value={meterForm.utility_type}
+                    onChange={(e) =>
+                      setMeterForm((s) => ({
+                        ...s,
+                        utility_type: e.target.value as MeterUpsertForm["utility_type"],
+                      }))
+                    }
+                  >
+                    <option value="electricity">Електроенергія</option>
+                    <option value="water">Вода</option>
+                    <option value="gas">Газ</option>
+                    <option value="heating">Опалення</option>
+                    <option value="sewage">Водовідведення</option>
+                    <option value="internet">Інтернет</option>
+                    <option value="other">Інше</option>
+                  </Se>
+                  <In
+                    tip="Серійний номер"
+                    placeholder="Серійний номер (необов'язково)"
+                    value={meterForm.serial_number}
+                    onChange={(e) => setMeterForm((s) => ({ ...s, serial_number: e.target.value }))}
+                  />
+                  <In
+                    tip="Початковий показник"
+                    placeholder="0"
+                    type="number"
+                    min="0"
+                    step="0.001"
+                    value={meterForm.initial_reading}
+                    onChange={(e) => setMeterForm((s) => ({ ...s, initial_reading: e.target.value }))}
+                  />
+                  <In
+                    tip="Дата встановлення"
+                    type="date"
+                    value={meterForm.installed_at}
+                    onChange={(e) => setMeterForm((s) => ({ ...s, installed_at: e.target.value }))}
+                  />
+                </div>
+                <div className="row-actions">
+                  <button onClick={submitMeter}>
+                    {editingMeterId ? "Зберегти лічильник" : "Додати лічильник"}
+                  </button>
+                  {editingMeterId && (
+                    <button className="secondary" onClick={resetMeterForm}>
+                      Скасувати
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

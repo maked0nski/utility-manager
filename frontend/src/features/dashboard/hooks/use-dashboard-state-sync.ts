@@ -3,30 +3,6 @@ import { formatPhone, monthStart } from "@/shared/utils/format";
 import { todayIso } from "@/shared/utils/date";
 import type { BillingHistoryItem } from "@/shared/api/types";
 
-type DashboardTenant = {
-  full_name?: string;
-  phone?: string;
-  phones?: string[];
-  contacts?: Array<{ name?: string; relation?: string; phone?: string; note?: string }>;
-  bank_statement_name?: string;
-  rent_amount?: string;
-  rent_currency?: string;
-  passport_number?: string;
-  passport_issued_by?: string;
-  passport_issue_date?: string;
-  passport_expiry_date?: string;
-};
-
-type DashboardDetail = {
-  address?: string;
-  utility_balance: {
-    month_payments?: string;
-    month_payment_date?: string;
-    month_payment_note?: string;
-  };
-  tenant?: DashboardTenant | null;
-};
-
 type SetState<T> = (value: T | ((prev: T) => T)) => void;
 
 export function useDashboardStateSync({

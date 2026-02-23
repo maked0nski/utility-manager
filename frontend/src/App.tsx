@@ -25,6 +25,7 @@ import { DashboardContent } from "@/features/layout/components/DashboardContent"
 import { AppModals } from "@/features/layout/components/AppModals";
 import { useAdminUserActions } from "@/features/auth/hooks/use-admin-user-actions";
 import { useTariffActions } from "@/features/tariffs/hooks/use-tariff-actions";
+import { useServiceLedgerActions } from "@/features/tariffs/hooks/use-service-ledger-actions";
 import { useTariffFormState } from "@/features/tariffs/hooks/use-tariff-form-state";
 import { useAuthActions } from "@/features/auth/hooks/use-auth-actions";
 import type { BillingHistoryItem, MeterUpsertForm } from "@/shared/api/types";
@@ -258,6 +259,22 @@ export default function App() {
     invalidateApartmentQueries,
     reload,
   });
+  const {
+    fixedServiceNames,
+    selectedService: selectedLedgerService,
+    setSelectedService: setSelectedLedgerService,
+    ledgerForm,
+    setLedgerForm,
+    ledgerHistory,
+    ledgerHistoryLoading,
+    saveServiceLedgerMonth,
+  } = useServiceLedgerActions({
+    tok,
+    apartmentId: sel?.apartment_id,
+    period: p,
+    tariffs: tar,
+    pushToast,
+  });
   const { addOwner, addMaint, saveOc, delOc, saveMr, delMr, openOc, openMr } = useOwnerActions({
     tok,
     apartmentId: sel?.apartment_id,
@@ -388,6 +405,14 @@ export default function App() {
         ap={ap}
         setAp={setAp}
         meters={meters}
+        fixedServiceNames={fixedServiceNames}
+        selectedLedgerService={selectedLedgerService}
+        setSelectedLedgerService={setSelectedLedgerService}
+        ledgerForm={ledgerForm}
+        setLedgerForm={setLedgerForm}
+        saveServiceLedgerMonth={saveServiceLedgerMonth}
+        ledgerHistory={ledgerHistory}
+        ledgerHistoryLoading={ledgerHistoryLoading}
         meterForm={meterForm}
         setMeterForm={setMeterForm}
         editingMeterId={editingMeterId}

@@ -299,3 +299,82 @@ def test_meter_delete_conflict_when_bound_to_tariff():
     remove = client.delete(f"/admin/meters/{meter_id}", headers=headers)
     assert remove.status_code == 409
     assert "used in tariffs" in remove.json()["detail"]
+
+
+def test_service_ledger_history_recalculates_balances_from_changed_month():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Ledger address"},
+        headers=headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+    service_name = "kvartplata"
+
+    jan = client.put(
+        f"/admin/apartments/{apartment_id}/service-ledger/{service_name}",
+        json={
+            "year": 2026,
+            "month": 1,
+            "accrued": "334.50",
+            "paid": "100.00",
+            "adjustment": "0.00",
+            "benefit": "0.00",
+            "subsidy": "0.00",
+        },
+        headers=headers,
+    )
+    assert jan.status_code == 200
+    assert jan.json()["opening_balance"] == "0.00"
+    assert jan.json()["closing_balance"] == "234.50"
+
+    feb = client.put(
+        f"/admin/apartments/{apartment_id}/service-ledger/{service_name}",
+        json={
+            "year": 2026,
+            "month": 2,
+            "accrued": "656.48",
+            "paid": "0.00",
+            "adjustment": "0.00",
+            "benefit": "0.00",
+            "subsidy": "0.00",
+        },
+        headers=headers,
+    )
+    assert feb.status_code == 200
+    assert feb.json()["opening_balance"] == "234.50"
+    assert feb.json()["closing_balance"] == "890.98"
+
+    jan_update = client.put(
+        f"/admin/apartments/{apartment_id}/service-ledger/{service_name}",
+        json={
+            "year": 2026,
+            "month": 1,
+            "accrued": "334.50",
+            "paid": "200.00",
+            "adjustment": "0.00",
+            "benefit": "0.00",
+            "subsidy": "0.00",
+        },
+        headers=headers,
+    )
+    assert jan_update.status_code == 200
+    assert jan_update.json()["closing_balance"] == "134.50"
+
+    history = client.get(
+        f"/admin/apartments/{apartment_id}/service-ledger/{service_name}/history?limit=12",
+        headers=headers,
+    )
+    assert history.status_code == 200
+    rows = history.json()
+    assert len(rows) == 2
+    # Desc order: February first.
+    assert rows[0]["year"] == 2026 and rows[0]["month"] == 2
+    assert rows[0]["opening_balance"] == "134.50"
+    assert rows[0]["closing_balance"] == "790.98"
+    assert rows[1]["year"] == 2026 and rows[1]["month"] == 1

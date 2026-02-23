@@ -85,6 +85,9 @@ class Apartment(Base):
     billing_change_logs: Mapped[list[BillingChangeLog]] = relationship(
         back_populates="apartment", cascade="all, delete-orphan"
     )
+    service_ledger_entries: Mapped[list[ServiceLedgerEntry]] = relationship(
+        back_populates="apartment", cascade="all, delete-orphan"
+    )
 
 
 class AdminUser(Base):
@@ -415,3 +418,39 @@ class BillingChangeLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     apartment: Mapped[Apartment] = relationship(back_populates="billing_change_logs")
+
+
+class ServiceLedgerEntry(Base):
+    __tablename__ = "service_ledger_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "apartment_id",
+            "service_name",
+            "year",
+            "month",
+            name="uq_service_ledger_period",
+        ),
+        Index(
+            "ix_service_ledger_apartment_service_period",
+            "apartment_id",
+            "service_name",
+            "year",
+            "month",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    apartment_id: Mapped[int] = mapped_column(ForeignKey("apartments.id"), index=True)
+    service_name: Mapped[str] = mapped_column(String(128), index=True)
+    year: Mapped[int] = mapped_column(index=True)
+    month: Mapped[int] = mapped_column(index=True)
+    accrued: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    adjustment: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    benefit: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    subsidy: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    opening_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    closing_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    apartment: Mapped[Apartment] = relationship(back_populates="service_ledger_entries")

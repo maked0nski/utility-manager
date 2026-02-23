@@ -71,3 +71,29 @@ export interface MeterUpsertForm {
   initial_reading: string;
   installed_at: string;
 }
+
+export interface ServiceLedgerRow {
+  id: number;
+  apartment_id: number;
+  service_name: string;
+  year: number;
+  month: number;
+  accrued: string;
+  paid: string;
+  adjustment: string;
+  benefit: string;
+  subsidy: string;
+  opening_balance: string;
+  closing_balance: string;
+  updated_at: string;
+}
+
+export interface ServiceLedgerForm {
+  year: number;
+  month: number;
+  accrued: string;
+  paid: string;
+  adjustment: string;
+  benefit: string;
+  subsidy: string;
+}

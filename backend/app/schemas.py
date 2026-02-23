@@ -225,6 +225,32 @@ class UtilityPaymentCreate(BaseModel):
     note: str | None = None
 
 
+class ServiceLedgerUpsert(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    accrued: Decimal = Field(default=Decimal("0.00"))
+    paid: Decimal = Field(default=Decimal("0.00"))
+    adjustment: Decimal = Field(default=Decimal("0.00"))
+    benefit: Decimal = Field(default=Decimal("0.00"))
+    subsidy: Decimal = Field(default=Decimal("0.00"))
+
+
+class ServiceLedgerRowOut(BaseModel):
+    id: int
+    apartment_id: int
+    service_name: str
+    year: int
+    month: int
+    accrued: Decimal
+    paid: Decimal
+    adjustment: Decimal
+    benefit: Decimal
+    subsidy: Decimal
+    opening_balance: Decimal
+    closing_balance: Decimal
+    updated_at: datetime
+
+
 class RentRecordUpsert(BaseModel):
     apartment_id: int
     year: int = Field(ge=2000, le=2100)

@@ -65,6 +65,14 @@ export function DashboardContent({
   setNewTar,
   createTariff,
   meters,
+  fixedServiceNames,
+  selectedLedgerService,
+  setSelectedLedgerService,
+  ledgerForm,
+  setLedgerForm,
+  saveServiceLedgerMonth,
+  ledgerHistory,
+  ledgerHistoryLoading,
   own,
   setOwn,
   addOwner,
@@ -133,6 +141,38 @@ export function DashboardContent({
   setNewTar: (v: any) => void;
   createTariff: () => Promise<void>;
   meters: MeterItem[];
+  fixedServiceNames: string[];
+  selectedLedgerService: string;
+  setSelectedLedgerService: Dispatch<SetStateAction<string>>;
+  ledgerForm: {
+    year: number;
+    month: number;
+    accrued: string;
+    paid: string;
+    adjustment: string;
+    benefit: string;
+    subsidy: string;
+  };
+  setLedgerForm: Dispatch<
+    SetStateAction<{
+      year: number;
+      month: number;
+      accrued: string;
+      paid: string;
+      adjustment: string;
+      benefit: string;
+      subsidy: string;
+    }>
+  >;
+  saveServiceLedgerMonth: () => Promise<void>;
+  ledgerHistory: Array<{
+    year: number;
+    month: number;
+    accrued: string;
+    paid: string;
+    closing_balance: string;
+  }>;
+  ledgerHistoryLoading: boolean;
   own: any;
   setOwn: (v: any) => void;
   addOwner: () => Promise<void>;
@@ -272,6 +312,15 @@ export function DashboardContent({
               setNewTar={setNewTar}
               createTariff={createTariff}
               meters={meters}
+              fixedServiceNames={fixedServiceNames}
+              selectedLedgerService={selectedLedgerService}
+              setSelectedLedgerService={setSelectedLedgerService}
+              ledgerForm={ledgerForm}
+              setLedgerForm={setLedgerForm}
+              saveServiceLedgerMonth={saveServiceLedgerMonth}
+              ledgerHistory={ledgerHistory}
+              ledgerHistoryLoading={ledgerHistoryLoading}
+              money={money}
             />
           )}
 

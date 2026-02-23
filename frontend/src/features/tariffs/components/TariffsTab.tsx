@@ -25,6 +25,15 @@ export function TariffsTab({
   setNewTar,
   createTariff,
   meters,
+  fixedServiceNames,
+  selectedLedgerService,
+  setSelectedLedgerService,
+  ledgerForm,
+  setLedgerForm,
+  saveServiceLedgerMonth,
+  ledgerHistory,
+  ledgerHistoryLoading,
+  money,
 }: {
   tar: any[];
   openT: (row: any) => void;
@@ -32,6 +41,39 @@ export function TariffsTab({
   setNewTar: Dispatch<SetStateAction<NewTariffForm>>;
   createTariff: () => Promise<void>;
   meters: Array<{ id: number; service_name: string; serial_number?: string | null }>;
+  fixedServiceNames: string[];
+  selectedLedgerService: string;
+  setSelectedLedgerService: Dispatch<SetStateAction<string>>;
+  ledgerForm: {
+    year: number;
+    month: number;
+    accrued: string;
+    paid: string;
+    adjustment: string;
+    benefit: string;
+    subsidy: string;
+  };
+  setLedgerForm: Dispatch<
+    SetStateAction<{
+      year: number;
+      month: number;
+      accrued: string;
+      paid: string;
+      adjustment: string;
+      benefit: string;
+      subsidy: string;
+    }>
+  >;
+  saveServiceLedgerMonth: () => Promise<void>;
+  ledgerHistory: Array<{
+    year: number;
+    month: number;
+    accrued: string;
+    paid: string;
+    closing_balance: string;
+  }>;
+  ledgerHistoryLoading: boolean;
+  money: (v: unknown) => string;
 }) {
   const sourceOptions = tar
     .map((x) => x.service_name)
@@ -121,6 +163,119 @@ export function TariffsTab({
           </>}
         </div>
         <button onClick={createTariff}>Додати тариф</button>
+      </div>
+      <div className="subcard top-gap">
+        <h4>Спрощений помісячний облік послуги</h4>
+        {!fixedServiceNames.length ? (
+          <p className="helper">Немає fixed-послуг для ведення помісячного обліку.</p>
+        ) : (
+          <>
+            <div className="forms-grid">
+              <Se
+                tip="Послуга"
+                value={selectedLedgerService}
+                onChange={(e) => setSelectedLedgerService(e.target.value)}
+              >
+                {fixedServiceNames.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Se>
+              <In
+                tip="Рік"
+                type="number"
+                min="2000"
+                max="2100"
+                value={ledgerForm.year}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, year: Number(e.target.value || s.year) }))}
+              />
+              <In
+                tip="Місяць"
+                type="number"
+                min="1"
+                max="12"
+                value={ledgerForm.month}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, month: Number(e.target.value || s.month) }))}
+              />
+              <In
+                tip="Нараховано"
+                type="number"
+                step="0.01"
+                value={ledgerForm.accrued}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, accrued: e.target.value }))}
+              />
+              <In
+                tip="Оплачено"
+                type="number"
+                step="0.01"
+                value={ledgerForm.paid}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, paid: e.target.value }))}
+              />
+              <In
+                tip="Перерахунок (+/-)"
+                type="number"
+                step="0.01"
+                value={ledgerForm.adjustment}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, adjustment: e.target.value }))}
+              />
+              <In
+                tip="Пільга"
+                type="number"
+                step="0.01"
+                value={ledgerForm.benefit}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, benefit: e.target.value }))}
+              />
+              <In
+                tip="Субсидія"
+                type="number"
+                step="0.01"
+                value={ledgerForm.subsidy}
+                onChange={(e) => setLedgerForm((s) => ({ ...s, subsidy: e.target.value }))}
+              />
+            </div>
+            <button className="top-gap" onClick={saveServiceLedgerMonth}>
+              Зберегти місячні дані
+            </button>
+            <div className="table-wrap top-gap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Період</th>
+                    <th>Нараховано</th>
+                    <th>Оплачено</th>
+                    <th>Баланс на кінець</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledgerHistoryLoading && (
+                    <tr>
+                      <td colSpan={4}>
+                        <span className="helper">Завантаження історії...</span>
+                      </td>
+                    </tr>
+                  )}
+                  {!ledgerHistoryLoading && ledgerHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={4}>
+                        <span className="helper">Поки що немає записів.</span>
+                      </td>
+                    </tr>
+                  )}
+                  {!ledgerHistoryLoading &&
+                    ledgerHistory.map((row) => (
+                      <tr key={`${row.year}-${row.month}`}>
+                        <td>{String(row.month).padStart(2, "0")}.{row.year}</td>
+                        <td>{money(row.accrued)}</td>
+                        <td>{money(row.paid)}</td>
+                        <td>{money(row.closing_balance)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </>
   );

@@ -35,6 +35,7 @@ from app.models import (
     RentLedger,
     RentCurrency,
     RentalContract,
+    ServiceLedgerEntry,
     Tariff,
     Tenancy,
     Tenant,
@@ -79,6 +80,8 @@ from app.schemas import (
     TariffBindingUpdate,
     TariffUpdate,
     ServiceActivationUpdate,
+    ServiceLedgerRowOut,
+    ServiceLedgerUpsert,
     TenancyOut,
     TenantBasicOut,
     TenantCreate,
@@ -100,6 +103,39 @@ CONTRACT_SCAN_DIR.mkdir(parents=True, exist_ok=True)
 
 def _month_key(year: int, month: int) -> int:
     return year * 100 + month
+
+
+def _recalc_service_ledger_from_period(
+    db: Session,
+    apartment_id: int,
+    service_name: str,
+    start_year: int,
+    start_month: int,
+) -> None:
+    start_key = _month_key(start_year, start_month)
+    rows = db.scalars(
+        select(ServiceLedgerEntry)
+        .where(ServiceLedgerEntry.apartment_id == apartment_id)
+        .where(ServiceLedgerEntry.service_name == service_name)
+        .order_by(ServiceLedgerEntry.year, ServiceLedgerEntry.month, ServiceLedgerEntry.id)
+    ).all()
+    carry = Decimal("0.00")
+    for row in rows:
+        row_key = _month_key(row.year, row.month)
+        if row_key < start_key:
+            carry = Decimal(row.closing_balance)
+            continue
+        row.opening_balance = carry.quantize(Decimal("0.01"))
+        row.closing_balance = (
+            Decimal(row.opening_balance)
+            + Decimal(row.accrued)
+            + Decimal(row.adjustment)
+            - Decimal(row.benefit)
+            - Decimal(row.subsidy)
+            - Decimal(row.paid)
+        ).quantize(Decimal("0.01"))
+        row.updated_at = datetime.now(UTC)
+        carry = Decimal(row.closing_balance)
 
 
 def _generate_apartment_code(db: Session, address: str) -> str:
@@ -1560,6 +1596,117 @@ def add_utility_payment(
     )
     db.commit()
     return {"status": "saved"}
+
+
+@router.put(
+    "/apartments/{apartment_id}/service-ledger/{service_name}",
+    response_model=ServiceLedgerRowOut,
+    dependencies=[Depends(require_write_access)],
+)
+def upsert_service_ledger_month(
+    apartment_id: int,
+    service_name: str,
+    payload: ServiceLedgerUpsert,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(get_current_admin_user),
+):
+    apartment = db.get(Apartment, apartment_id)
+    if apartment is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+    normalized_service_name = service_name.strip()
+    if not normalized_service_name:
+        raise HTTPException(status_code=400, detail="Service name is required.")
+    row = db.scalar(
+        select(ServiceLedgerEntry).where(
+            and_(
+                ServiceLedgerEntry.apartment_id == apartment_id,
+                ServiceLedgerEntry.service_name == normalized_service_name,
+                ServiceLedgerEntry.year == payload.year,
+                ServiceLedgerEntry.month == payload.month,
+            )
+        )
+    )
+    if row is None:
+        row = ServiceLedgerEntry(
+            apartment_id=apartment_id,
+            service_name=normalized_service_name,
+            year=payload.year,
+            month=payload.month,
+        )
+        db.add(row)
+        db.flush()
+    old_values = {
+        "accrued": str(row.accrued),
+        "paid": str(row.paid),
+        "adjustment": str(row.adjustment),
+        "benefit": str(row.benefit),
+        "subsidy": str(row.subsidy),
+    }
+    row.accrued = payload.accrued
+    row.paid = payload.paid
+    row.adjustment = payload.adjustment
+    row.benefit = payload.benefit
+    row.subsidy = payload.subsidy
+    row.updated_at = datetime.now(UTC)
+    _ensure_apartment_service(db, apartment_id, normalized_service_name, date(payload.year, payload.month, 1))
+    _recalc_service_ledger_from_period(
+        db,
+        apartment_id=apartment_id,
+        service_name=normalized_service_name,
+        start_year=payload.year,
+        start_month=payload.month,
+    )
+    db.commit()
+    db.refresh(row)
+    _log_billing_change(
+        db,
+        apartment_id=apartment_id,
+        year=payload.year,
+        month=payload.month,
+        actor_username=user.username,
+        action="service_ledger_saved",
+        entity_type="service_ledger",
+        entity_id=row.id,
+        service_name=normalized_service_name,
+        details={
+            "old": old_values,
+            "new": {
+                "accrued": str(row.accrued),
+                "paid": str(row.paid),
+                "adjustment": str(row.adjustment),
+                "benefit": str(row.benefit),
+                "subsidy": str(row.subsidy),
+            },
+            "opening_balance": str(row.opening_balance),
+            "closing_balance": str(row.closing_balance),
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get(
+    "/apartments/{apartment_id}/service-ledger/{service_name}/history",
+    response_model=list[ServiceLedgerRowOut],
+)
+def service_ledger_history(
+    apartment_id: int,
+    service_name: str,
+    limit: int = 24,
+    db: Session = Depends(get_db),
+):
+    if db.get(Apartment, apartment_id) is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+    safe_limit = min(max(limit, 1), 120)
+    rows = db.scalars(
+        select(ServiceLedgerEntry)
+        .where(ServiceLedgerEntry.apartment_id == apartment_id)
+        .where(ServiceLedgerEntry.service_name == service_name.strip())
+        .order_by(ServiceLedgerEntry.year.desc(), ServiceLedgerEntry.month.desc(), ServiceLedgerEntry.id.desc())
+        .limit(safe_limit)
+    ).all()
+    return rows
 
 
 @router.put("/rent", dependencies=[Depends(require_write_access)])

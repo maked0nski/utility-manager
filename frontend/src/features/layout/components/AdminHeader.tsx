@@ -1,48 +1,54 @@
+import { useLanguage } from "@/shared/i18n/provider";
+import { ModeToggle } from "@/shared/ui/mode-toggle";
+
 export function AdminHeader({
   boot,
   onOpenDrawer,
   onOpenAdmins,
-  onOpenChangePassword,
+  onOpenSettings,
   onLogout,
 }: {
   boot: { must_change_password: boolean; password_rotation_recommended?: boolean };
   onOpenDrawer: () => void;
   onOpenAdmins: () => void;
-  onOpenChangePassword: () => void;
+  onOpenSettings: () => void;
   onLogout: () => void;
 }) {
+  const { t } = useLanguage();
+
   return (
     <header className="hero">
       <div className="title-row">
         <div>
-          <h1>UtilityManager Admin</h1>
-          <p>Нерухомість, оренда, комуналка, витрати.</p>
+          <h1>{t("admin.header.title", "UtilityManager Admin")}</h1>
+          <p>{t("admin.header.subtitle", "Нерухомість, оренда, комуналка, витрати.")}</p>
         </div>
-        <div className="row-actions">
-          <button className="secondary" onClick={onOpenDrawer}>
-            Список нерухомості
+        <div className="hero-actions">
+          <ModeToggle />
+          <button className="hero-btn" onClick={onOpenDrawer}>
+            {t("admin.header.properties", "Нерухомість/орендарі")}
           </button>
-          <button className="secondary" onClick={onOpenAdmins}>
-            Користувачі
+          <button className="hero-btn" onClick={onOpenAdmins}>
+            {t("admin.header.users", "Користувачі")}
           </button>
-          <button className="secondary" onClick={onOpenChangePassword}>
-            Змінити пароль
+          <button className="hero-btn" onClick={onOpenSettings}>
+            {t("admin.header.settings", "Профіль")}
           </button>
-          <button className="secondary" onClick={onLogout}>
-            Вийти
+          <button className="hero-btn ghost" onClick={onLogout}>
+            {t("admin.header.logout", "Вийти")}
           </button>
         </div>
       </div>
       {boot.must_change_password && (
         <p className="warning">
-          Нагадування: використовується стандартний пароль адміністратора.
-          Рекомендується змінити його в меню "Змінити пароль".
+          {t(
+            "admin.warning.defaultPassword",
+            "Нагадування: використовується стандартний пароль адміністратора. Рекомендується змінити його в меню \"Користувачі\".",
+          )}
         </p>
       )}
       {!boot.must_change_password && boot.password_rotation_recommended && (
-        <p className="warning">
-          Нагадування: пароль адміністратора не змінювався понад 90 днів. Рекомендується ротація.
-        </p>
+        <p className="warning">{t("admin.warning.rotation", "Нагадування: пароль адміністратора не змінювався понад 90 днів. Рекомендується ротація.")}</p>
       )}
     </header>
   );

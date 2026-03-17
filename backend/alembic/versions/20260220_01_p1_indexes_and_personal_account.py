@@ -17,7 +17,15 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return table_name in inspector.get_table_names()
+
+
 def _column_exists(table_name: str, column_name: str) -> bool:
+    if not _table_exists(table_name):
+        return False
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     columns = inspector.get_columns(table_name)
@@ -25,6 +33,8 @@ def _column_exists(table_name: str, column_name: str) -> bool:
 
 
 def _index_exists(table_name: str, index_name: str) -> bool:
+    if not _table_exists(table_name):
+        return False
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     indexes = inspector.get_indexes(table_name)

@@ -1,11 +1,36 @@
-import { API_BASE, TOKEN_KEY } from "@/shared/constants/app";
-import type { ApiErrorPayload, ApiRequestOptions } from "@/shared/api/types";
+import { API_BASE } from "@/shared/constants/app";
+import type { ApiErrorPayload, ApiRequestOptions, ApiValidationErrorItem } from "@/shared/api/types";
 
 function normalizeBody(body: ApiRequestOptions["body"]): BodyInit | null | undefined {
   if (body === undefined || body === null) return body;
   if (body instanceof FormData) return body;
   if (typeof body === "string") return body;
   return JSON.stringify(body);
+}
+
+function parseValidationDetail(items: ApiValidationErrorItem[]): string | null {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const first = items[0];
+  if (!first) return null;
+  if (first.msg && first.loc?.length) {
+    const field = String(first.loc[first.loc.length - 1] || "").replaceAll("_", " ");
+    return field ? `${field}: ${first.msg}` : first.msg;
+  }
+  if (first.msg) return first.msg;
+  return null;
+}
+
+function parseApiErrorMessage(payload: ApiErrorPayload): string {
+  if (typeof payload?.detail === "string" && payload.detail.trim()) return payload.detail;
+  if (Array.isArray(payload?.detail)) {
+    const msg = parseValidationDetail(payload.detail as ApiValidationErrorItem[]);
+    if (msg) return msg;
+  }
+  if (payload?.detail && typeof payload.detail === "object") {
+    const detailObj = payload.detail as Record<string, unknown>;
+    if (typeof detailObj.message === "string" && detailObj.message.trim()) return detailObj.message;
+  }
+  return "Request failed";
 }
 
 export async function api<T = unknown>(
@@ -24,7 +49,6 @@ export async function api<T = unknown>(
   const data = (await res.json().catch(() => ({}))) as T | ApiErrorPayload;
 
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("um-unauthorized"));
     }
@@ -32,7 +56,7 @@ export async function api<T = unknown>(
 
   if (!res.ok) {
     const payload = data as ApiErrorPayload;
-    throw new Error(typeof payload.detail === "string" ? payload.detail : "Request failed");
+    throw new Error(parseApiErrorMessage(payload));
   }
   return data as T;
 }

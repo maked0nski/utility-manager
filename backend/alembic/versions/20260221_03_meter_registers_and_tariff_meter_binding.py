@@ -17,19 +17,31 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(table_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    return table_name in inspector.get_table_names()
+
+
 def _column_names(table_name: str) -> set[str]:
+    if not _table_exists(table_name):
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {col["name"] for col in inspector.get_columns(table_name)}
 
 
 def _unique_names(table_name: str) -> set[str]:
+    if not _table_exists(table_name):
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {uc["name"] for uc in inspector.get_unique_constraints(table_name)}
 
 
 def _index_names(table_name: str) -> set[str]:
+    if not _table_exists(table_name):
+        return set()
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return {idx["name"] for idx in inspector.get_indexes(table_name)}
@@ -71,7 +83,8 @@ def downgrade() -> None:
     uq_names = _unique_names("meter_readings")
     if "uq_reading_period" in uq_names:
         op.drop_constraint("uq_reading_period", "meter_readings", type_="unique")
-    op.create_unique_constraint("uq_reading_period", "meter_readings", ["meter_id", "year", "month"])
+    if _table_exists("meter_readings"):
+        op.create_unique_constraint("uq_reading_period", "meter_readings", ["meter_id", "year", "month"])
 
     reading_cols = _column_names("meter_readings")
     if "register_name" in reading_cols:

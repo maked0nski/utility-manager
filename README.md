@@ -11,6 +11,7 @@ utility-manager/
   docker-compose.yml
   PROJECT_DOCUMENTATION.md  # повна документація
   TODO.md                   # актуальний план робіт
+  docker/                   # інфраструктурні артефакти (init/sql тощо)
   backend/                  # FastAPI + SQLAlchemy + Alembic
     app/
     alembic/
@@ -38,6 +39,7 @@ utility-manager/
    - API: `http://localhost:<API_PORT>/health`
    - Frontend: `http://localhost:<FRONTEND_PORT>`
    - Adminer: `http://localhost:<ADMINER_PORT>`
+   - Worker (optional run): `docker compose run --rm worker`
 
 Альтернатива через root script:
 - `npm run dev:up`
@@ -55,6 +57,7 @@ Frontend:
 - `npm run typecheck`
 - `npm run test`
 - `npm run dev`
+- `npm run ui:add button` (додавання shadcn компонентів)
 
 ## Якість коду перед комітом
 
@@ -67,3 +70,11 @@ Frontend:
 Workflow: `.github/workflows/ci.yml`
 - backend: `pytest -q`
 - frontend: `lint + typecheck + test + build`
+
+## UI Toolkit
+
+- Tailwind + shadcn база налаштована у `frontend/`:
+  - `tailwind.config.ts`
+  - `postcss.config.cjs`
+  - `components.json`
+  - `src/styles/tailwind.css`

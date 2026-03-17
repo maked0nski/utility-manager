@@ -1,0 +1,254 @@
+.mobile-sticky .right-sticky {
+  position: sticky;
+  right: 0;
+  background: var(--surface);
+}
+
+.skeleton-block {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--bg-soft) 45%, var(--surface));
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--line) 50%, transparent),
+    color-mix(in srgb, var(--line-strong) 80%, transparent),
+    color-mix(in srgb, var(--line) 50%, transparent)
+  );
+  background-size: 220px 100%;
+  animation: skeleton-shimmer 1.5s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: -220px 0;
+  }
+  to {
+    background-position: 220px 0;
+  }
+}
+
+.mobile-cards {
+  display: none;
+}
+
+.mobile-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-card-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mobile-card-meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+@media (max-width: 980px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .forms-grid,
+  .compact-grid {
+    grid-template-columns: 1fr;
+  }
+  .electricity-mode-toolbar,
+  .electricity-zone-grid,
+  .automation-filter-panel,
+  .automation-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .automation-meta-row {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+  .row-inline {
+    flex-direction: column;
+  }
+  .calc-totals {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .tenant-header {
+    flex-direction: column;
+  }
+  .tenant-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .tenant-nav a,
+  .tenant-nav button {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 740px) {
+  .automation-grid {
+    grid-template-columns: 1fr;
+  }
+  .automation-group-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: 100%;
+    margin: 8px auto 20px;
+    padding: 0 8px;
+  }
+  .hero {
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .hero h1 {
+    font-size: 24px;
+  }
+  .hero-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .hero-btn {
+    flex: 1 1 100%;
+  }
+  .period-nav span,
+  .period-label-button {
+    min-width: 128px;
+  }
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-kpi-strip {
+    grid-template-columns: 1fr;
+  }
+  .property-overview-inline {
+    grid-template-columns: 1fr;
+  }
+  .tenant-inline-grid {
+    grid-template-columns: 1fr;
+  }
+  .tenant-card {
+    padding: 12px;
+  }
+  .service-connection-head,
+  .service-line-editor-toolbar,
+  .header-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .service-connection-overview {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .service-connection-overview > span {
+    justify-self: start;
+  }
+  .service-line-editor-list,
+  .service-connection-list {
+    gap: 8px;
+  }
+  .tenant-table-wrap th,
+  .tenant-table-wrap td {
+    white-space: normal;
+  }
+  .modal-backdrop {
+    padding: 8px;
+    align-items: flex-start;
+  }
+  .modal {
+    max-height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+  .modal-header {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .modal-header h3 {
+    font-size: 18px;
+    line-height: 1.3;
+  }
+  .service-line-editor,
+  .service-connection-card,
+  .subcard {
+    overflow-x: hidden;
+  }
+}
+
+@media (max-width: 560px) {
+  .automation-meta-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mobile-hide-table {
+    display: none;
+  }
+
+  .mobile-cards {
+    margin-top: 10px;
+    display: grid;
+    gap: 8px;
+  }
+}
+
+@media print {
+  @page {
+    size: A5 landscape;
+    margin: 6mm;
+  }
+  body {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .hero,
+  .property-drawer,
+  .drawer-backdrop,
+  .tabs,
+  .row-actions,
+  .warning {
+    display: none !important;
+  }
+  .app-shell,
+  .card,
+  .content,
+  .report-screen,
+  .report-print-sheet {
+    width: 100% !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  .report-print-sheet {
+    height: 132mm;
+    overflow: hidden;
+    page-break-inside: avoid;
+  }
+  .mobile-cards {
+    display: none !important;
+  }
+}

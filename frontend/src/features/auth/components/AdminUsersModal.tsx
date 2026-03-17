@@ -23,18 +23,21 @@ export function AdminUsersModal({
   users,
   onCreate,
   onUpdate,
+  onChangePassword,
 }: {
   open: boolean;
   onClose: () => void;
   users: AdminUser[];
   onCreate: (payload: CreateAdminPayload) => void;
   onUpdate: (payload: AdminUser) => void;
+  onChangePassword: (payload: { id: number; new_password: string }) => void;
 }) {
   const [form, setForm] = useState<CreateAdminPayload>({
     username: "",
     password: "",
     role: "operator",
   });
+  const [passwordDraft, setPasswordDraft] = useState<Record<number, string>>({});
   if (!open) return null;
   return (
     <Modal title="Користувачі адмін-панелі" onClose={onClose}>
@@ -68,7 +71,7 @@ export function AdminUsersModal({
                 <th>Логін</th>
                 <th>Роль</th>
                 <th>Стан</th>
-                <th></th>
+                <th>Зміна пароля</th>
               </tr>
             </thead>
             <tbody>
@@ -84,11 +87,38 @@ export function AdminUsersModal({
                   </td>
                   <td>
                     <label className="check">
-                      <input type="checkbox" checked={u.is_active} onChange={(e) => onUpdate({ ...u, is_active: e.target.checked })} />
+                      <input
+                        type="checkbox"
+                        checked={u.is_active}
+                        onChange={(e) => onUpdate({ ...u, is_active: e.target.checked })}
+                      />
                       {u.is_active ? "активний" : "вимкнений"}
                     </label>
                   </td>
-                  <td></td>
+                  <td>
+                    <div className="row-actions">
+                      <In
+                        tip="Новий пароль (мін. 8 символів)"
+                        type="password"
+                        value={passwordDraft[u.id] || ""}
+                        onChange={(e) =>
+                          setPasswordDraft((s) => ({ ...s, [u.id]: e.target.value }))
+                        }
+                      />
+                      <button
+                        className="secondary"
+                        disabled={(passwordDraft[u.id] || "").length < 8}
+                        onClick={() => {
+                          const nextPassword = (passwordDraft[u.id] || "").trim();
+                          if (nextPassword.length < 8) return;
+                          onChangePassword({ id: u.id, new_password: nextPassword });
+                          setPasswordDraft((s) => ({ ...s, [u.id]: "" }));
+                        }}
+                      >
+                        Змінити
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

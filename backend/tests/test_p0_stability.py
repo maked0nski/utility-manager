@@ -193,7 +193,7 @@ def test_utility_payment_upsert_and_payment_date_per_month():
     )
     assert pay_sep_1.status_code == 200
 
-    # Update (must replace, not add).
+    # Another payment in the same month (must be added and accumulated).
     pay_sep_2 = client.post(
         "/admin/payments/utilities",
         json={
@@ -211,7 +211,7 @@ def test_utility_payment_upsert_and_payment_date_per_month():
     sep = client.get(f"/admin/dashboard/apartments/{apartment_id}?year=2024&month=9", headers=headers)
     assert sep.status_code == 200
     sep_balance = sep.json()["utility_balance"]
-    assert sep_balance["month_payments"] == "60.00"
+    assert sep_balance["month_payments"] == "110.00"
     assert sep_balance["month_payment_date"] == "2024-10-02"
     assert sep_balance["month_payment_note"] == "second"
 
@@ -224,9 +224,11 @@ def test_utility_payment_upsert_and_payment_date_per_month():
                 UtilityPayment.month == 9,
             )
         ).all()
-        assert len(rows) == 1
-        assert str(rows[0].amount) == "60.00"
-        assert str(rows[0].paid_at) == "2024-10-02"
+        assert len(rows) == 2
+        amounts = sorted(str(x.amount) for x in rows)
+        paid_dates = sorted(str(x.paid_at) for x in rows)
+        assert amounts == ["50.00", "60.00"]
+        assert paid_dates == ["2024-10-01", "2024-10-02"]
     finally:
         db.close()
 

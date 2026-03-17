@@ -4,18 +4,16 @@ import time
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
-from app.core.auth import hash_password
 from app.core.config import settings
 from app.api.tenant import router as tenant_router
 from app.db.base import Base
+from app.db.migrations import run_startup_migrations
 from app.db.session import SessionLocal, engine
-from app.models import AdminUser
 
 
 @asynccontextmanager
@@ -26,15 +24,7 @@ async def lifespan(_: FastAPI):
         db: Session = SessionLocal()
         try:
             Base.metadata.create_all(bind=engine)
-            existing = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_username))
-            if existing is None:
-                db.add(
-                    AdminUser(
-                        username=settings.admin_username,
-                        password_hash=hash_password(settings.admin_password),
-                    )
-                )
-                db.commit()
+            run_startup_migrations(db)
             last_error = None
             break
         except OperationalError as exc:

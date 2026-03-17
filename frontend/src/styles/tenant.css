@@ -1,0 +1,182 @@
+.tenant-login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(160deg, var(--bg-soft), var(--bg));
+}
+
+.tenant-shell {
+  min-height: 100vh;
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 20px 12px;
+}
+
+.tenant-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow);
+}
+
+.tenant-header h1 {
+  font-size: 24px;
+}
+
+.tenant-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tenant-nav button,
+.tenant-nav a,
+.tenant-language-select,
+.btn-primary,
+.tenant-link-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  color: #fff;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.tenant-language-select {
+  min-width: 132px;
+}
+
+.tenant-nav button.active,
+.tenant-nav a.active {
+  filter: brightness(1.12);
+}
+
+.tenant-card,
+.tenant-summary-card,
+.tenant-nested-table-wrap {
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-elevated);
+}
+
+.tenant-card {
+  padding: 16px;
+  width: min(1020px, 100%);
+  margin: 0 auto;
+}
+
+.tenant-card h2,
+.tenant-card h3 {
+  margin: 0 0 12px;
+}
+
+.tenant-form-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.tenant-inline-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.tenant-table-wrap {
+  overflow: auto;
+}
+
+.tenant-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tenant-table-wrap th,
+.tenant-table-wrap td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tenant-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.tenant-summary-card {
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.tenant-summary-card strong {
+  font-size: 18px;
+}
+
+.tenant-error {
+  color: var(--danger);
+}
+
+.tenant-notice {
+  color: var(--success);
+}
+
+.tenant-inline-error {
+  margin: 0 0 12px;
+}
+
+.tenant-error-box {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.tenant-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 110px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tenant-status-paid {
+  background: color-mix(in srgb, var(--success) 14%, var(--surface));
+  color: var(--success);
+}
+
+.tenant-status-unpaid {
+  background: color-mix(in srgb, var(--warning) 14%, var(--surface));
+  color: var(--warning);
+}
+
+.tenant-muted {
+  color: var(--muted);
+}
+
+.tenant-nested-table-wrap {
+  padding: 8px;
+}

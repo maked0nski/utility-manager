@@ -5,6 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 type AdminRole = "admin" | "operator" | "read_only";
 type CreateAdminPayload = { username: string; password: string; role: AdminRole };
 type UpdateAdminPayload = { id: number; role: AdminRole; is_active: boolean };
+type ChangeAdminPasswordPayload = { id: number; new_password: string };
 
 export function useAdminUserActions({
   tok,
@@ -38,5 +39,18 @@ export function useAdminUserActions({
     onError: (e: Error) => pushToast(e.message || "Не вдалося оновити користувача", "error"),
   });
 
-  return { createAdminUserMutation, updateAdminUserMutation };
+  const changeAdminPasswordMutation = useMutation({
+    mutationFn: async (payload: ChangeAdminPasswordPayload) =>
+      api(`/auth/admin/users/${payload.id}/password`, tok, {
+        method: "PUT",
+        body: JSON.stringify({ new_password: payload.new_password }),
+      }),
+    onSuccess: () => {
+      pushToast("Пароль користувача змінено", "success");
+      queryClient.invalidateQueries({ queryKey: ["admin-users", tok] });
+    },
+    onError: (e: Error) => pushToast(e.message || "Не вдалося змінити пароль користувача", "error"),
+  });
+
+  return { createAdminUserMutation, updateAdminUserMutation, changeAdminPasswordMutation };
 }

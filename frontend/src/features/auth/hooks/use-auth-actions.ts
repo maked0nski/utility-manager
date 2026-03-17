@@ -4,16 +4,19 @@ import { api } from "@/shared/api/client";
 
 type LoginCreds = { username: string; password: string };
 type PasswordPayload = { current_password: string; new_password: string };
+type InitialAdminPayload = { username: string; password: string; confirm_password: string };
 type BootstrapInfo = {
   username: string | null;
   password: string | null;
   must_change_password: boolean;
   password_rotation_recommended: boolean;
+  needs_initial_admin_setup: boolean;
 };
 
 export function useAuthActions({
   tok,
   cred,
+  initialAdmin,
   pwd,
   setErr,
   setBoot,
@@ -27,6 +30,7 @@ export function useAuthActions({
 }: {
   tok: string | null;
   cred: LoginCreds;
+  initialAdmin: InitialAdminPayload;
   pwd: PasswordPayload;
   setErr: (message: string) => void;
   setBoot: (value: BootstrapInfo) => void;
@@ -69,6 +73,21 @@ export function useAuthActions({
     onError: (e: Error) => setErr(e.message || "Не вдалося змінити пароль"),
   });
 
+  const registerInitialAdminMutation = useMutation({
+    mutationFn: async () =>
+      api<{ access_token: string }>("/auth/admin/register-initial", null, {
+        method: "POST",
+        body: JSON.stringify(initialAdmin),
+      }),
+    onSuccess: async (response) => {
+      saveToken(response.access_token);
+      setErr("");
+      const info = await api<BootstrapInfo>("/auth/admin/bootstrap-info", null);
+      setBoot(info);
+    },
+    onError: (e: Error) => setErr(e.message || "Не вдалося створити першого адміністратора"),
+  });
+
   useEffect(() => {
     if (tok) return;
     api<BootstrapInfo>("/auth/admin/bootstrap-info", null)
@@ -79,6 +98,7 @@ export function useAuthActions({
           password: null,
           must_change_password: false,
           password_rotation_recommended: false,
+          needs_initial_admin_setup: false,
         }),
       );
   }, [tok, setBoot]);
@@ -98,5 +118,9 @@ export function useAuthActions({
     await changePasswordMutation.mutateAsync(data);
   };
 
-  return { login, out, changePassword };
+  const registerInitialAdmin = async () => {
+    await registerInitialAdminMutation.mutateAsync();
+  };
+
+  return { login, out, changePassword, registerInitialAdmin };
 }

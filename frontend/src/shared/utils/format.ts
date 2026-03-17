@@ -1,4 +1,4 @@
-import { MONTHS } from "@/shared/constants/app";
+import { MONTH_LABELS, readStoredLanguage } from "@/shared/i18n/config";
 import { formatUkDate, monthStartIso } from "@/shared/utils/date";
 
 export const money = (v: unknown): string => Number(v || 0).toFixed(2);
@@ -6,7 +6,10 @@ export const money = (v: unknown): string => Number(v || 0).toFixed(2);
 export const asInt = (v: unknown): string =>
   v === null || v === undefined || v === "" ? "" : String(Math.trunc(Number(v)));
 
-export const periodLabel = (year: number, month: number): string => `${MONTHS[month - 1]} ${year}`;
+export const periodLabel = (year: number, month: number): string => {
+  const language = readStoredLanguage();
+  return `${MONTH_LABELS[language][month - 1]} ${year}`;
+};
 
 export const dt = (x: string | Date | null | undefined): string => formatUkDate(x);
 

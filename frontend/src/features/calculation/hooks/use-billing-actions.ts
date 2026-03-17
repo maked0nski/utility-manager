@@ -1,7 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import type { Dispatch, SetStateAction } from "react";
-import type { CalculationRow } from "@/shared/api/types";
+import type {
+  CalculationRow,
+  MeterSubmitDispatchResult,
+  MeterSubmitEvaluateResult,
+} from "@/shared/api/types";
 
 type Period = { year: number; month: number };
 type DraftData = {
@@ -14,15 +18,8 @@ type UtilityPaymentForm = {
   paid_at: string;
   note?: string | null;
 };
-type TariffLite = {
-  service_name: string;
-  tariff_id: number;
-  unit_name: string;
-};
 type SaveUtilityPaymentPayload = {
   apartment_id: number;
-  year: number;
-  month: number;
   amount: number;
   paid_at: string;
   note: string | null;
@@ -33,12 +30,12 @@ interface UseBillingActionsParams {
   apartmentId?: number;
   period: Period;
   pay: UtilityPaymentForm;
-  tar: TariffLite[];
   draft: DraftData;
   setEditSrv: (v: string | null) => void;
   setDraft: Dispatch<SetStateAction<DraftData>>;
   setPayModal: (v: boolean) => void;
   pushToast: (message: string, kind?: "success" | "error") => void;
+  confirmRun: (title: string, message: string, action: () => void | Promise<void>) => void;
   reload: () => Promise<unknown>;
   invalidateApartmentQueries: () => Promise<void>;
   calcLocked?: boolean;
@@ -49,12 +46,12 @@ export function useBillingActions({
   apartmentId,
   period,
   pay,
-  tar,
   draft,
   setEditSrv,
   setDraft,
   setPayModal,
   pushToast,
+  confirmRun,
   reload,
   invalidateApartmentQueries,
   calcLocked,
@@ -71,15 +68,24 @@ export function useBillingActions({
 
   const saveRowMutation = useMutation({
     mutationFn: async (row: CalculationRow) => {
-      const t = tar.find((x) => x.service_name === row.service_name);
-      if (t && draft.unit_price !== undefined) {
-        await api(`/admin/tariffs/${t.tariff_id}/apply-from-period`, tok, {
+      if (
+        row.meter_id &&
+        draft.current_reading !== undefined &&
+        draft.current_reading !== "" &&
+        row.previous_reading !== null &&
+        row.previous_reading !== undefined &&
+        Number(draft.current_reading) < Number(row.previous_reading)
+      ) {
+        throw new Error(`Поточний показник не може бути меншим за попередній (${row.previous_reading}).`);
+      }
+      if (row.line_id && draft.unit_price !== undefined) {
+        await api(`/admin/charge-lines/${row.line_id}/apply-from-period`, tok, {
           method: "POST",
           body: JSON.stringify({
             year: period.year,
             month: period.month,
             price_per_unit: Number(Number(draft.unit_price).toFixed(2)),
-            unit_name: t.unit_name,
+            unit_name: row.unit_name,
           }),
         });
       }
@@ -105,6 +111,43 @@ export function useBillingActions({
             value: Number(draft.current_reading),
           }),
         });
+        if (apartmentId) {
+          const registerName = row.meter_register || "total";
+          const evalResult = await api<MeterSubmitEvaluateResult>(
+            `/admin/automations/meter-submit/evaluate?apartment_id=${encodeURIComponent(
+              String(apartmentId),
+            )}&meter_id=${encodeURIComponent(String(row.meter_id))}&register_name=${encodeURIComponent(
+              registerName,
+            )}&year=${encodeURIComponent(String(period.year))}&month=${encodeURIComponent(String(period.month))}`,
+            tok,
+          );
+          if (evalResult.can_submit) {
+            confirmRun(
+              "Передати показник постачальнику",
+              `Ви зберегли показник для "${row.service_name}". Передати його через automation "${
+                evalResult.template_name || "постачальника"
+              }"?`,
+              async () => {
+                const dispatchResult = await api<MeterSubmitDispatchResult>("/admin/automations/meter-submit/dispatch", tok, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    apartment_id: apartmentId,
+                    meter_id: row.meter_id,
+                    register_name: registerName,
+                    year: period.year,
+                    month: period.month,
+                  }),
+                });
+                if (dispatchResult.dispatched) {
+                  pushToast(dispatchResult.message || "Показник передано постачальнику", "success");
+                  await invalidateApartmentQueries();
+                } else {
+                  pushToast(dispatchResult.message || "Показник не передано", "error");
+                }
+              },
+            );
+          }
+        }
       }
     },
     onSuccess: async () => {
@@ -153,8 +196,6 @@ export function useBillingActions({
     if (!apartmentId) throw new Error("Apartment is not selected");
     await saveUtilityPaymentMutation.mutateAsync({
       apartment_id: apartmentId,
-      year: period.year,
-      month: period.month,
       amount: Number(data.amount || 0),
       paid_at: data.paid_at,
       note: data.note || null,

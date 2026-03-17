@@ -11,10 +11,14 @@ type NewTariffForm = {
   meter_serial_number: string;
   service_status: "active" | "inactive";
   disable_from_month: string;
+  provider_id: string;
+  provider_company: string;
   personal_account: string;
   meter_id: string;
   meter_register: string;
   source_service_name: string;
+  fixed_quantity_source: "auto" | "unit" | "apartment_registered_residents" | "apartment_area_m2";
+  fixed_quantity_multiplier: string;
 };
 
 export function useTariffFormState() {
@@ -29,10 +33,14 @@ export function useTariffFormState() {
     meter_serial_number: "",
     service_status: "active",
     disable_from_month: "",
+    provider_id: "",
+    provider_company: "",
     personal_account: "",
     meter_id: "",
     meter_register: "total",
     source_service_name: "",
+    fixed_quantity_source: "auto",
+    fixed_quantity_multiplier: "1",
   });
   const [tModal, setTModal] = useState<any>(null);
   const [tForm, setTForm] = useState<any>(null);

@@ -24,6 +24,8 @@ def _table_exists(table_name: str) -> bool:
 
 
 def _index_exists(table_name: str, index_name: str) -> bool:
+    if not _table_exists(table_name):
+        return False
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     return any(idx["name"] == index_name for idx in inspector.get_indexes(table_name))

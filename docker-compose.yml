@@ -34,11 +34,30 @@ services:
     volumes:
       - ./backend:/app
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    build:
+      context: ./backend
+    container_name: um_worker
+    restart: "no"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - worker
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "python -m app.workers.provider_sync"
 
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
     container_name: um_frontend
     restart: unless-stopped
     depends_on:

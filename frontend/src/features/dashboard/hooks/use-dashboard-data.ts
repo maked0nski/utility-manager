@@ -1,25 +1,42 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import { SELECTED_APARTMENT_KEY } from "@/shared/constants/app";
-import type { BillingHistoryItem, MeterItem } from "@/shared/api/types";
+import type {
+  ApartmentEquipmentItem,
+  BillingHistoryItem,
+  MeterItem,
+  TenancyHistoryItem,
+  UtilityPaymentItem,
+} from "@/shared/api/types";
 
 type Period = { year: number; month: number };
 type ApartmentSummary = {
   apartment_id: number;
   code?: string;
   address?: string;
+  short_address?: string;
   total_balance?: string | number;
 };
 type DetailBundle = {
-  d: { address?: string; apartment_id: number; utility_balance: Record<string, string>; tenant?: unknown };
-  t: unknown[];
+  d: {
+    address?: string;
+    short_address?: string;
+    apartment_id: number;
+    utility_balance: Record<string, string>;
+    tenant?: unknown;
+  };
   meters: MeterItem[];
+  equipment: ApartmentEquipmentItem[];
+  tenancies: TenancyHistoryItem[];
+  payments: UtilityPaymentItem[];
   o: unknown[];
   m: unknown[];
   allTenants: unknown[];
   h: BillingHistoryItem[];
 };
+type StaticDetailBundle = Omit<DetailBundle, "d" | "h">;
+type PeriodDetailBundle = Pick<DetailBundle, "d" | "h">;
 
 interface UseDashboardDataParams {
   tok: string | null;
@@ -45,6 +62,7 @@ export function useDashboardData({
   pushToast,
 }: UseDashboardDataParams) {
   const queryClient = useQueryClient();
+  const apartmentId = sel?.apartment_id ?? null;
 
   const apartmentsQuery = useQuery<ApartmentSummary[], Error>({
     queryKey: ["dashboard-apartments", tok],
@@ -52,24 +70,72 @@ export function useDashboardData({
     queryFn: async () => api<ApartmentSummary[]>("/admin/dashboard/apartments", tok),
   });
 
-  const detailBundleQuery = useQuery<DetailBundle, Error>({
-    queryKey: ["apartment-detail-bundle", tok, sel?.apartment_id, period.year, period.month],
-    enabled: !!tok && !!sel?.apartment_id,
+  const detailBundleQuery = useQuery<StaticDetailBundle, Error>({
+    queryKey: ["apartment-detail-bundle", tok, apartmentId],
+    enabled: !!tok && !!apartmentId,
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const id = sel?.apartment_id;
+      const id = apartmentId;
       if (!id) throw new Error("Apartment is not selected");
-      const [d, t, meters, o, m, allTenants, h] = await Promise.all([
-        api(`/admin/dashboard/apartments/${id}?year=${period.year}&month=${period.month}`, tok),
-        api(`/admin/apartments/${id}/tariffs?year=${period.year}&month=${period.month}`, tok),
+      const [meters, equipment, tenancies, payments, o, m, allTenants] = await Promise.all([
         api(`/admin/apartments/${id}/meters`, tok),
+        api(`/admin/apartments/${id}/equipment`, tok),
+        api(`/admin/apartments/${id}/tenancies`, tok),
+        api(`/admin/apartments/${id}/utility-payments`, tok),
         api(`/admin/apartments/${id}/owner-charges`, tok),
         api(`/admin/apartments/${id}/maintenance`, tok),
         api("/admin/tenants", tok),
-        api(`/admin/billing/history?apartment_id=${id}&year=${period.year}&month=${period.month}&limit=100`, tok),
       ]);
-      return { d, t, meters, o, m, allTenants, h } as DetailBundle;
+      return { meters, equipment, tenancies, payments, o, m, allTenants } as StaticDetailBundle;
     },
   });
+
+  const periodDetailQuery = useQuery<PeriodDetailBundle, Error>({
+    queryKey: ["apartment-detail-bundle", tok, apartmentId, period.year, period.month],
+    enabled: !!tok && !!apartmentId,
+    placeholderData: (previousData) => previousData,
+    queryFn: async () => {
+      const id = apartmentId;
+      if (!id) throw new Error("Apartment is not selected");
+      const [d, h] = await Promise.all([
+        api(`/admin/dashboard/apartments/${id}?year=${period.year}&month=${period.month}`, tok),
+        api(`/admin/billing/history?apartment_id=${id}&year=${period.year}&month=${period.month}&limit=100`, tok),
+      ]);
+      return { d, h } as PeriodDetailBundle;
+    },
+  });
+
+  const detailBundleData = useMemo(() => {
+    if (!detailBundleQuery.data || !periodDetailQuery.data) return undefined;
+    return {
+      ...detailBundleQuery.data,
+      ...periodDetailQuery.data,
+    } as DetailBundle;
+  }, [detailBundleQuery.data, periodDetailQuery.data]);
+
+  useEffect(() => {
+    if (!tok || !apartmentId || !periodDetailQuery.data) return;
+    const neighbors = [
+      period.month === 1 ? { year: period.year - 1, month: 12 } : { year: period.year, month: period.month - 1 },
+      period.month === 12 ? { year: period.year + 1, month: 1 } : { year: period.year, month: period.month + 1 },
+    ];
+    for (const neighbor of neighbors) {
+      void queryClient.prefetchQuery({
+        queryKey: ["apartment-detail-bundle", tok, apartmentId, neighbor.year, neighbor.month],
+        staleTime: 60 * 1000,
+        queryFn: async () => {
+          const [d, h] = await Promise.all([
+            api(`/admin/dashboard/apartments/${apartmentId}?year=${neighbor.year}&month=${neighbor.month}`, tok),
+            api(
+              `/admin/billing/history?apartment_id=${apartmentId}&year=${neighbor.year}&month=${neighbor.month}&limit=100`,
+              tok,
+            ),
+          ]);
+          return { d, h } as PeriodDetailBundle;
+        },
+      });
+    }
+  }, [queryClient, tok, apartmentId, period.year, period.month, periodDetailQuery.data]);
 
   const adminUsersQuery = useQuery<unknown[], Error>({
     queryKey: ["admin-users", tok],
@@ -79,15 +145,19 @@ export function useDashboardData({
 
   const invalidateApartmentQueries = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["dashboard-apartments", tok] });
+    await queryClient.invalidateQueries({ queryKey: ["apartment-detail-bundle", tok, apartmentId] });
     await queryClient.invalidateQueries({
-      queryKey: ["apartment-detail-bundle", tok, sel?.apartment_id, period.year, period.month],
+      queryKey: ["apartment-detail-bundle", tok, apartmentId, period.year, period.month],
     });
-  }, [queryClient, tok, sel?.apartment_id, period.year, period.month]);
+  }, [queryClient, tok, apartmentId, period.year, period.month]);
 
   const reload = useCallback(async () => {
     await apartmentsQuery.refetch();
-    if (sel?.apartment_id) await detailBundleQuery.refetch();
-  }, [apartmentsQuery, detailBundleQuery, sel?.apartment_id]);
+    if (apartmentId) {
+      await detailBundleQuery.refetch();
+      await periodDetailQuery.refetch();
+    }
+  }, [apartmentsQuery, detailBundleQuery, periodDetailQuery, apartmentId]);
 
   useEffect(() => {
     const apartments = apartmentsQuery.data;
@@ -111,10 +181,14 @@ export function useDashboardData({
   }, [apartmentsQuery.error, setErr]);
 
   useEffect(() => {
-    if (detailBundleQuery.error) {
-      setErr(detailBundleQuery.error.message || "Не вдалося завантажити деталі об'єкта.");
+    if (detailBundleQuery.error || periodDetailQuery.error) {
+      setErr(
+        detailBundleQuery.error?.message ||
+          periodDetailQuery.error?.message ||
+          "Не вдалося завантажити деталі об'єкта.",
+      );
     }
-  }, [detailBundleQuery.error, setErr]);
+  }, [detailBundleQuery.error, periodDetailQuery.error, setErr]);
 
   useEffect(() => {
     if (!adminsModal || !adminUsersQuery.error) return;
@@ -129,7 +203,12 @@ export function useDashboardData({
 
   return {
     apartmentsQuery,
-    detailBundleQuery,
+    detailBundleQuery: {
+      data: detailBundleData,
+      isFetching: detailBundleQuery.isFetching || periodDetailQuery.isFetching,
+      error: detailBundleQuery.error || periodDetailQuery.error,
+    },
+    detailBundleData,
     adminUsersQuery,
     apartments: apartmentsQuery.data || [],
     invalidateApartmentQueries,

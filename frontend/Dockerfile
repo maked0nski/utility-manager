@@ -1,5 +1,7 @@
 FROM node:20-alpine AS build
 WORKDIR /frontend
+ARG VITE_GOOGLE_MAPS_API_KEY=""
+ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
 COPY package.json /frontend/package.json
 COPY package-lock.json /frontend/package-lock.json
 RUN npm config set fetch-retries 5 \

@@ -28,15 +28,17 @@ describe("useMeterActions", () => {
           tok: "token",
           apartmentId: 11,
           meterForm: {
-            service_name: "Вода",
-            utility_type: "water",
+            meter_type_id: "2",
             serial_number: "W-001",
-            initial_reading: "10",
             installed_at: "2026-01-01",
           },
           editingMeterId: null,
+          replacingMeterId: null,
+          replacementForm: { serial_number: "", initial_reading: "", installed_at: "" },
           setMeterForm,
           setEditingMeterId,
+          setReplacingMeterId: vi.fn(),
+          setReplacementForm: vi.fn(),
           pushToast,
           confirmRun: vi.fn(),
           reload,
@@ -51,7 +53,15 @@ describe("useMeterActions", () => {
     expect(apiMock).toHaveBeenCalledWith(
       "/admin/meters",
       "token",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          apartment_id: 11,
+          meter_type_id: 2,
+          serial_number: "W-001",
+          installed_at: "2026-01-01",
+        }),
+      }),
     );
     expect(reload).toHaveBeenCalled();
   });
@@ -69,15 +79,17 @@ describe("useMeterActions", () => {
           tok: "token",
           apartmentId: 11,
           meterForm: {
-            service_name: "Електрика",
-            utility_type: "electricity",
+            meter_type_id: "1",
             serial_number: "E-777",
-            initial_reading: "25",
             installed_at: "2026-01-02",
           },
           editingMeterId: 77,
+          replacingMeterId: null,
+          replacementForm: { serial_number: "", initial_reading: "", installed_at: "" },
           setMeterForm,
           setEditingMeterId,
+          setReplacingMeterId: vi.fn(),
+          setReplacementForm: vi.fn(),
           pushToast,
           confirmRun: vi.fn(),
           reload,
@@ -92,7 +104,14 @@ describe("useMeterActions", () => {
     expect(apiMock).toHaveBeenCalledWith(
       "/admin/meters/77",
       "token",
-      expect.objectContaining({ method: "PUT" }),
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          meter_type_id: 1,
+          serial_number: "E-777",
+          installed_at: "2026-01-02",
+        }),
+      }),
     );
     expect(reload).toHaveBeenCalled();
   });
@@ -111,15 +130,17 @@ describe("useMeterActions", () => {
           tok: "token",
           apartmentId: 11,
           meterForm: {
-            service_name: "",
-            utility_type: "other",
+            meter_type_id: "",
             serial_number: "",
-            initial_reading: "",
             installed_at: "",
           },
           editingMeterId: null,
+          replacingMeterId: null,
+          replacementForm: { serial_number: "", initial_reading: "", installed_at: "" },
           setMeterForm,
           setEditingMeterId,
+          setReplacingMeterId: vi.fn(),
+          setReplacementForm: vi.fn(),
           pushToast,
           confirmRun,
           reload,
@@ -130,6 +151,7 @@ describe("useMeterActions", () => {
     const meter = {
       id: 42,
       service_name: "Газ",
+      meter_type_id: 3,
       utility_type: "gas" as const,
       serial_number: null,
       initial_reading: "0",

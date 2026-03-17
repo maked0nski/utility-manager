@@ -7,7 +7,6 @@ import { Modal } from "@/shared/ui/modal";
 import { Toasts } from "@/shared/ui/toast";
 import { ConfirmModal } from "@/shared/ui/confirm-modal";
 import { AdminUsersModal } from "@/features/auth/components/AdminUsersModal";
-import { TariffEditModal } from "@/features/tariffs/components/TariffEditModal";
 import type { ConfirmState, ToastItem } from "@/features/layout/hooks/use-modal-state";
 import type { Dispatch, SetStateAction } from "react";
 
@@ -79,14 +78,7 @@ export function AppModals({
   adminUsersQuery,
   createAdminUserMutation,
   updateAdminUserMutation,
-  tModal,
-  tForm,
-  saveT,
-  delT,
-  meters,
-  tariffServiceNames,
-  setTModal,
-  setTFormModal,
+  changeAdminPasswordMutation,
   ocModal,
   ocForm,
   setOcModal,
@@ -118,14 +110,7 @@ export function AppModals({
   adminUsersQuery: { data?: any[] };
   createAdminUserMutation: { mutate: (payload: any) => void };
   updateAdminUserMutation: { mutate: (payload: any) => void };
-  tModal: any;
-  tForm: any;
-  saveT: (payload: any) => Promise<void>;
-  delT: () => Promise<void>;
-  meters: Array<{ id: number; service_name: string; serial_number?: string | null }>;
-  tariffServiceNames: string[];
-  setTModal: (v: any) => void;
-  setTFormModal: (v: any) => void;
+  changeAdminPasswordMutation: { mutate: (payload: any) => void };
   ocModal: any;
   ocForm: any;
   setOcModal: (v: any) => void;
@@ -325,18 +310,7 @@ export function AppModals({
         users={adminUsersQuery.data || []}
         onCreate={(payload) => createAdminUserMutation.mutate(payload)}
         onUpdate={(payload) => updateAdminUserMutation.mutate(payload)}
-      />
-      <TariffEditModal
-        tModal={tModal}
-        tForm={tForm}
-        saveT={saveT}
-        delT={delT}
-        meters={meters}
-        serviceNames={tariffServiceNames}
-        close={() => {
-          setTModal(null);
-          setTFormModal(null);
-        }}
+        onChangePassword={(payload) => changeAdminPasswordMutation.mutate(payload)}
       />
       {ocModal && ocForm && (
         <Modal

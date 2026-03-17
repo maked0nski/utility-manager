@@ -26,12 +26,14 @@ const normalizeNumericLike = (value) => {
   return raw;
 };
 
-export const In = ({ onChange, onKeyDown, tip, placeholder, ...props }) => (
+export const In = ({ onChange, onKeyDown, tip, placeholder, help, ...props }) => (
   <label className="field">
-    {(props.label || placeholder || tip) && <span className="field-label">{props.label || placeholder || tip}</span>}
+    {(props.label || tip) && <span className="field-label">{props.label || tip}</span>}
     <input
-      title={tip || placeholder || ""}
+      title={help || tip || placeholder || ""}
       {...props}
+      type={props.type === "number" ? "text" : props.type}
+      inputMode={props.type === "number" ? "decimal" : props.inputMode}
       onChange={(e) => {
         const nextValue = normalizeNumericLike(e.target.value);
         if (nextValue !== e.target.value) e.target.value = nextValue;
@@ -46,14 +48,15 @@ export const In = ({ onChange, onKeyDown, tip, placeholder, ...props }) => (
         }
       }}
     />
+    {help ? <span className="field-help">{help}</span> : null}
   </label>
 );
 
-export const Se = ({ tip, children, onKeyDown, ...props }) => (
+export const Se = ({ tip, children, onKeyDown, help, ...props }) => (
   <label className="field">
-    {(props.label || props.placeholder || tip) && <span className="field-label">{props.label || props.placeholder || tip}</span>}
+    {(props.label || tip) && <span className="field-label">{props.label || tip}</span>}
     <select
-      title={tip || ""}
+      title={help || tip || ""}
       {...props}
       onKeyDown={(e) => {
         onKeyDown?.(e);
@@ -66,14 +69,15 @@ export const Se = ({ tip, children, onKeyDown, ...props }) => (
     >
       {children}
     </select>
+    {help ? <span className="field-help">{help}</span> : null}
   </label>
 );
 
-export const Ta = ({ onKeyDown, tip, placeholder, ...props }) => (
+export const Ta = ({ onKeyDown, tip, placeholder, help, ...props }) => (
   <label className="field">
-    {(props.label || placeholder || tip) && <span className="field-label">{props.label || placeholder || tip}</span>}
+    {(props.label || tip) && <span className="field-label">{props.label || tip}</span>}
     <textarea
-      title={tip || placeholder || ""}
+      title={help || tip || placeholder || ""}
       {...props}
       onKeyDown={(e) => {
         onKeyDown?.(e);
@@ -84,5 +88,6 @@ export const Ta = ({ onKeyDown, tip, placeholder, ...props }) => (
         }
       }}
     />
+    {help ? <span className="field-help">{help}</span> : null}
   </label>
 );

@@ -23,8 +23,22 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
-def create_token(subject: str, role: str, ttl_seconds: int = 60 * 60 * 24) -> str:
-    payload = {"sub": subject, "role": role, "exp": int(time.time()) + ttl_seconds}
+def create_token(
+    subject: str,
+    role: str,
+    ttl_seconds: int = 60 * 60 * 24,
+    token_type: str = "access",
+    session_version: int | None = None,
+) -> str:
+    payload = {
+        "sub": subject,
+        "role": role,
+        "type": token_type,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + ttl_seconds,
+    }
+    if session_version is not None:
+        payload["session_version"] = int(session_version)
     raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     sig = hmac.new(settings.app_secret_key.encode("utf-8"), raw, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(raw).decode("utf-8") + "." + base64.urlsafe_b64encode(sig).decode("utf-8")

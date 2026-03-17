@@ -27,6 +27,12 @@ class ChangePasswordPayload(BaseModel):
     new_password: str
 
 
+class InitialAdminRegisterPayload(BaseModel):
+    username: str
+    password: str
+    confirm_password: str
+
+
 class AdminUserOut(BaseModel):
     id: int
     username: str
@@ -45,6 +51,10 @@ class AdminUserRolePayload(BaseModel):
     is_active: bool = True
 
 
+class AdminUserPasswordPayload(BaseModel):
+    new_password: str
+
+
 def _validate_password_strength(password: str) -> None:
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
@@ -56,8 +66,21 @@ def _validate_password_strength(password: str) -> None:
         raise HTTPException(status_code=400, detail="Password must include at least one digit.")
 
 
+def _normalize_username(username: str) -> str:
+    normalized = username.strip()
+    if len(normalized) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+    return normalized
+
+
+def _has_admin_users(db: Session) -> bool:
+    return db.scalar(select(AdminUser.id).limit(1)) is not None
+
+
 @router.post("/admin/login")
 def admin_login(payload: LoginPayload, db: Session = Depends(get_db)):
+    if not _has_admin_users(db):
+        raise HTTPException(status_code=409, detail="Initial admin setup required.")
     user = db.scalar(select(AdminUser).where(AdminUser.username == payload.username))
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="Invalid credentials.")
@@ -66,18 +89,53 @@ def admin_login(payload: LoginPayload, db: Session = Depends(get_db)):
     return {"access_token": create_token(user.username, user.role.value), "token_type": "bearer"}
 
 
+@router.post("/admin/register-initial")
+def admin_register_initial(payload: InitialAdminRegisterPayload, db: Session = Depends(get_db)):
+    if _has_admin_users(db):
+        raise HTTPException(status_code=409, detail="Initial admin is already configured.")
+    username = _normalize_username(payload.username)
+    if payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+    _validate_password_strength(payload.password)
+    user = AdminUser(
+        username=username,
+        password_hash=hash_password(payload.password),
+        role=Role.admin,
+        is_active=True,
+        password_changed_at=datetime.now(UTC),
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Username already exists.")
+    return {"access_token": create_token(user.username, user.role.value), "token_type": "bearer"}
+
+
 @router.get("/admin/bootstrap-info")
 def admin_bootstrap_info(db: Session = Depends(get_db)):
+    if not _has_admin_users(db):
+        return {
+            "username": None,
+            "password": None,
+            "must_change_password": False,
+            "password_rotation_recommended": False,
+            "needs_initial_admin_setup": True,
+        }
     user = db.scalar(select(AdminUser).where(AdminUser.username == settings.admin_username))
     using_default = bool(
         user is not None
         and verify_password(settings.admin_password, user.password_hash)
         and user.username == settings.admin_username
     )
+    password_changed_at = user.password_changed_at if user is not None else None
+    if password_changed_at is not None and password_changed_at.tzinfo is None:
+        password_changed_at = password_changed_at.replace(tzinfo=UTC)
     password_rotation_recommended = bool(
         user is not None
-        and user.password_changed_at is not None
-        and datetime.now(UTC) - user.password_changed_at > timedelta(days=PASSWORD_ROTATION_DAYS)
+        and password_changed_at is not None
+        and datetime.now(UTC) - password_changed_at > timedelta(days=PASSWORD_ROTATION_DAYS)
         and not using_default
     )
     return {
@@ -85,6 +143,7 @@ def admin_bootstrap_info(db: Session = Depends(get_db)):
         "password": settings.admin_password if using_default else None,
         "must_change_password": using_default,
         "password_rotation_recommended": password_rotation_recommended,
+        "needs_initial_admin_setup": False,
     }
 
 
@@ -112,7 +171,12 @@ def list_admin_users(_: AdminUser = Depends(require_admin), db: Session = Depend
 @router.post("/admin/users", response_model=AdminUserOut)
 def create_admin_user(payload: AdminUserCreatePayload, _: AdminUser = Depends(require_admin), db: Session = Depends(get_db)):
     _validate_password_strength(payload.password)
-    user = AdminUser(username=payload.username.strip(), password_hash=hash_password(payload.password), role=payload.role, is_active=True)
+    user = AdminUser(
+        username=_normalize_username(payload.username),
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+        is_active=True,
+    )
     db.add(user)
     try:
         db.commit()
@@ -140,3 +204,20 @@ def update_admin_user_role(
     db.commit()
     db.refresh(user)
     return AdminUserOut(id=user.id, username=user.username, role=user.role, is_active=user.is_active)
+
+
+@router.put("/admin/users/{user_id}/password")
+def update_admin_user_password(
+    user_id: int,
+    payload: AdminUserPasswordPayload,
+    _: AdminUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.get(AdminUser, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Admin user not found.")
+    _validate_password_strength(payload.new_password)
+    user.password_hash = hash_password(payload.new_password)
+    user.password_changed_at = datetime.now(UTC)
+    db.commit()
+    return {"status": "password_changed"}

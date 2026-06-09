@@ -9,7 +9,6 @@ Thumbs.db
 .env.local
 .env.*.local
 
-
 # Local backups and deploy artifacts
 NAS_MIGRATION.md
 *.sql

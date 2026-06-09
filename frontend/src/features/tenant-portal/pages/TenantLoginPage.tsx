@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/shared/api/client";
 import { localizeApiError } from "@/features/tenant-portal/utils";
-import type { TenantSession } from "@/shared/api/types";
+import type { TenantPasswordResetResult, TenantSession } from "@/shared/api/types";
 
 export function TenantLoginPage({
   onSessionCreated,
@@ -48,7 +48,7 @@ export function TenantLoginPage({
   };
   const resetMutation = useMutation({
     mutationFn: async () =>
-      api("/tenant/password-reset", null, {
+      api<TenantPasswordResetResult>("/tenant/forgot-password", null, {
         method: "POST",
         body: {
           email: resetEmail.trim().toLowerCase(),
@@ -59,7 +59,7 @@ export function TenantLoginPage({
       }),
     onSuccess: () => {
       setError("");
-      setNotice("Пароль оновлено. Тепер увійдіть з новим паролем.");
+      setNotice("Пароль оновлено. Увійдіть з новим паролем.");
       setLoginEmail(resetEmail.trim().toLowerCase());
       setLoginPassword("");
       setResetAccessCode("");
@@ -80,7 +80,7 @@ export function TenantLoginPage({
     <div className="tenant-portal tenant-login-shell">
       <form className="tenant-card" onSubmit={mode === "login" ? onLoginSubmit : (event) => { event.preventDefault(); resetMutation.mutate(); }}>
         <h1>UtilityManager Tenant</h1>
-        {mode === "login" ? <p>Вхід в кабінет орендаря</p> : <p>Відновлення пароля орендаря</p>}
+        {mode === "login" ? <p>Вхід у кабінет орендаря</p> : <p>Відновлення доступу до кабінету</p>}
 
         {mode === "login" ? (
           <>
@@ -112,6 +112,7 @@ export function TenantLoginPage({
               value={resetEmail}
               onChange={(e) => setResetEmail(e.target.value)}
               type="email"
+              placeholder="tenant@example.com"
               required
             />
             <label htmlFor={resetAccessCodeId}>Код доступу</label>
@@ -123,13 +124,17 @@ export function TenantLoginPage({
               placeholder="Код, який видав адміністратор"
               required
             />
-            <p className="tenant-muted">Для відновлення пароля потрібні email орендаря та його код доступу.</p>
+            <p className="tenant-muted">
+              Для відновлення пароля введіть email, код доступу та новий пароль. Після оновлення старі сесії буде
+              завершено автоматично.
+            </p>
             <label htmlFor={resetPasswordId}>Новий пароль</label>
             <input
               id={resetPasswordId}
               value={resetPassword}
               onChange={(e) => setResetPassword(e.target.value)}
               type="password"
+              placeholder="Мінімум 8 символів, велика літера і цифра"
               required
             />
             <label htmlFor={resetPasswordConfirmId}>Підтвердьте новий пароль</label>

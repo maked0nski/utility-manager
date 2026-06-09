@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models import (
+    BillingStatementStatus,
     ChargeMode,
     ContractExtensionType,
     ChargeLineKind,
@@ -360,6 +361,11 @@ class TenantPasswordResetPayload(BaseModel):
     confirm_password: str
 
 
+class TenantPasswordResetResult(BaseModel):
+    status: str
+    session_revoked: bool
+
+
 class TenantProfileUpdate(BaseModel):
     email: str | None = None
     primary_phone: str | None = None
@@ -501,6 +507,29 @@ class BillingRecalculateRequest(BillingGenerateRequest):
 
 class BillingLockRequest(BillingGenerateRequest):
     pass
+
+
+class BillingMonthReopenRequest(BillingGenerateRequest):
+    reason: str = Field(default="Ручне розблокування місяця", min_length=3, max_length=255)
+
+
+class BillingAffectedPeriodOut(BaseModel):
+    year: int
+    month: int
+    label: str
+    reason: str
+
+
+class BillingMonthReopenResultOut(BaseModel):
+    status: str
+    reopened_count: int
+    reopened_periods: list[BillingAffectedPeriodOut]
+
+
+class BillingPeriodActionResultOut(BaseModel):
+    status: str
+    recalculated_count: int = 0
+    recalculated_periods: list[BillingAffectedPeriodOut] = Field(default_factory=list)
 
 
 class MissingServiceOut(BaseModel):
@@ -761,6 +790,70 @@ class BalanceExplainOut(BaseModel):
     report_balance: Decimal | None = None
 
 
+class LiveBalanceSummaryOut(BaseModel):
+    current_balance: Decimal
+    latest_payment_amount: Decimal | None = None
+    latest_payment_date: date | None = None
+    latest_payment_note: str | None = None
+
+
+class BillingMonthSnapshotOut(BaseModel):
+    id: int
+    apartment_id: int
+    year: int
+    month: int
+    status: str
+    opening_balance: Decimal
+    utility_accrual: Decimal
+    compensation_total: Decimal
+    month_total: Decimal
+    payments_in_month: Decimal
+    closing_balance: Decimal
+    confirmed_at: datetime | None = None
+    confirmed_by: str | None = None
+    reopened_at: datetime | None = None
+    reopened_by: str | None = None
+    reopen_reason: str | None = None
+    rows: list[CalculationRowOut] = Field(default_factory=list)
+
+
+class BillingStatementPrepareRequest(BillingGenerateRequest):
+    generated_at: datetime | None = None
+    note: str | None = None
+
+
+class BillingStatementSendRequest(BaseModel):
+    sent_channel: str = Field(default="manual", min_length=2, max_length=32)
+    sent_to: str | None = Field(default=None, max_length=255)
+    note: str | None = None
+
+
+class BillingStatementOut(BaseModel):
+    id: int
+    apartment_id: int
+    snapshot_id: int
+    year: int
+    month: int
+    version: int
+    status: BillingStatementStatus
+    generated_at: datetime
+    generated_by: str | None = None
+    sent_at: datetime | None = None
+    sent_channel: str | None = None
+    sent_to: str | None = None
+    month_closing_balance_snapshot: Decimal
+    payments_after_month_to_generated_at: Decimal
+    balance_due_on_generated_at: Decimal
+    note: str | None = None
+    rows: list[CalculationRowOut] = Field(default_factory=list)
+
+
+class BillingPeriodSummaryOut(BaseModel):
+    month_snapshot: BillingMonthSnapshotOut | None = None
+    current_statement: BillingStatementOut | None = None
+    statements: list[BillingStatementOut] = Field(default_factory=list)
+
+
 class BillingChangeLogOut(BaseModel):
     id: int
     apartment_id: int
@@ -812,6 +905,8 @@ class ApartmentDetailOut(BaseModel):
     year: int
     month: int
     utility_balance: BalanceExplainOut
+    live_balance_summary: LiveBalanceSummaryOut | None = None
+    billing_period_summary: BillingPeriodSummaryOut | None = None
     rent: RentMonthOut | None
     rows: list[CalculationRowOut]
     calc_locked: bool = False

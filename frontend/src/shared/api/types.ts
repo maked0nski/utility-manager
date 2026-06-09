@@ -30,6 +30,15 @@ export interface UtilityBalance {
   report_balance?: string | null;
 }
 
+export interface LiveBalanceSummary {
+  current_balance: string;
+  latest_payment_amount?: string | null;
+  latest_payment_date?: string | null;
+  latest_payment_note?: string | null;
+}
+
+export type BillingStatementStatus = "draft" | "prepared" | "sent" | "cancelled";
+
 export interface UtilityPaymentItem {
   id: number;
   apartment_id: number;
@@ -76,6 +85,71 @@ export interface BillingHistoryItem {
   actor_username: string;
   details: Record<string, ApiValue>;
   created_at: string;
+}
+
+export interface BillingMonthSnapshotItem {
+  id: number;
+  apartment_id: number;
+  year: number;
+  month: number;
+  status: string;
+  opening_balance: string;
+  utility_accrual: string;
+  compensation_total: string;
+  month_total: string;
+  payments_in_month: string;
+  closing_balance: string;
+  confirmed_at?: string | null;
+  confirmed_by?: string | null;
+  reopened_at?: string | null;
+  reopened_by?: string | null;
+  reopen_reason?: string | null;
+  rows: CalculationRow[];
+}
+
+export interface BillingAffectedPeriod {
+  year: number;
+  month: number;
+  label: string;
+  reason: string;
+}
+
+export interface BillingMonthReopenResult {
+  status: string;
+  reopened_count: number;
+  reopened_periods: BillingAffectedPeriod[];
+}
+
+export interface BillingPeriodActionResult {
+  status: string;
+  recalculated_count: number;
+  recalculated_periods: BillingAffectedPeriod[];
+}
+
+export interface BillingStatementItem {
+  id: number;
+  apartment_id: number;
+  snapshot_id: number;
+  year: number;
+  month: number;
+  version: number;
+  status: BillingStatementStatus;
+  generated_at: string;
+  generated_by?: string | null;
+  sent_at?: string | null;
+  sent_channel?: string | null;
+  sent_to?: string | null;
+  month_closing_balance_snapshot: string;
+  payments_after_month_to_generated_at: string;
+  balance_due_on_generated_at: string;
+  note?: string | null;
+  rows: CalculationRow[];
+}
+
+export interface BillingPeriodSummaryItem {
+  month_snapshot?: BillingMonthSnapshotItem | null;
+  current_statement?: BillingStatementItem | null;
+  statements: BillingStatementItem[];
 }
 
 export type UtilityType =
@@ -380,6 +454,11 @@ export interface TenantSession {
   refresh_token: string;
   expires_in: number;
   token_type: string;
+}
+
+export interface TenantPasswordResetResult {
+  status: string;
+  session_revoked: boolean;
 }
 
 export interface TenancyHistoryItem {

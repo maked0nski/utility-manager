@@ -58,6 +58,13 @@ class InvoiceStatus(StrEnum):
     paid = "paid"
 
 
+class BillingStatementStatus(StrEnum):
+    draft = "draft"
+    prepared = "prepared"
+    sent = "sent"
+    cancelled = "cancelled"
+
+
 class RentCurrency(StrEnum):
     uah = "UAH"
     usd = "USD"
@@ -163,6 +170,12 @@ class Apartment(Base):
         back_populates="apartment", cascade="all, delete-orphan"
     )
     service_connections: Mapped[list[ApartmentServiceConnection]] = relationship(
+        back_populates="apartment", cascade="all, delete-orphan"
+    )
+    billing_month_snapshots: Mapped[list[BillingMonthSnapshot]] = relationship(
+        back_populates="apartment", cascade="all, delete-orphan"
+    )
+    billing_statements: Mapped[list[BillingStatement]] = relationship(
         back_populates="apartment", cascade="all, delete-orphan"
     )
 
@@ -807,6 +820,78 @@ class BillingLock(Base):
     locked_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     apartment: Mapped[Apartment] = relationship(back_populates="billing_locks")
+
+
+class BillingMonthSnapshot(Base):
+    __tablename__ = "billing_month_snapshots"
+    __table_args__ = (
+        UniqueConstraint("apartment_id", "year", "month", name="uq_billing_month_snapshot_period"),
+        Index("ix_billing_month_snapshots_period", "apartment_id", "year", "month"),
+        Index("ix_billing_month_snapshots_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    apartment_id: Mapped[int] = mapped_column(ForeignKey("apartments.id"), index=True)
+    year: Mapped[int] = mapped_column(index=True)
+    month: Mapped[int] = mapped_column(index=True)
+    status: Mapped[str] = mapped_column(String(32), default="confirmed")
+    opening_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    utility_accrual: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    compensation_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    month_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    payments_in_month: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    closing_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    rows_json: Mapped[str | None] = mapped_column(Text, default=None)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    confirmed_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    reopened_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    reopen_reason: Mapped[str | None] = mapped_column(String(255), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    apartment: Mapped[Apartment] = relationship(back_populates="billing_month_snapshots")
+    statements: Mapped[list[BillingStatement]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
+
+
+class BillingStatement(Base):
+    __tablename__ = "billing_statements"
+    __table_args__ = (
+        UniqueConstraint("snapshot_id", "version", name="uq_billing_statements_snapshot_version"),
+        Index("ix_billing_statements_period", "apartment_id", "year", "month"),
+        Index("ix_billing_statements_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    apartment_id: Mapped[int] = mapped_column(ForeignKey("apartments.id"), index=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("billing_month_snapshots.id"), index=True)
+    year: Mapped[int] = mapped_column(index=True)
+    month: Mapped[int] = mapped_column(index=True)
+    version: Mapped[int] = mapped_column(default=1)
+    status: Mapped[BillingStatementStatus] = mapped_column(
+        Enum(BillingStatementStatus), default=BillingStatementStatus.draft
+    )
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    generated_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    sent_channel: Mapped[str | None] = mapped_column(String(32), default=None)
+    sent_to: Mapped[str | None] = mapped_column(String(255), default=None)
+    month_closing_balance_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    payments_after_month_to_generated_at: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    balance_due_on_generated_at: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    payload_json: Mapped[str | None] = mapped_column(Text, default=None)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    apartment: Mapped[Apartment] = relationship(back_populates="billing_statements")
+    snapshot: Mapped[BillingMonthSnapshot] = relationship(back_populates="statements")
 
 
 class BillingChangeLog(Base):

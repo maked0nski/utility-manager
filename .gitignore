@@ -10,6 +10,13 @@ Thumbs.db
 .env.*.local
 
 
+# Local backups and deploy artifacts
+NAS_MIGRATION.md
+*.sql
+*.tar.gz
+*.zip
+*.xlsx
+
 # Python (backend)
 backend/.venv/
 backend/venv/

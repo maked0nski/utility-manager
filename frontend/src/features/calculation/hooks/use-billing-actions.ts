@@ -2,6 +2,8 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import type { Dispatch, SetStateAction } from "react";
 import type {
+  BillingPeriodActionResult,
+  BillingMonthReopenResult,
   CalculationRow,
   MeterSubmitDispatchResult,
   MeterSubmitEvaluateResult,
@@ -161,30 +163,65 @@ export function useBillingActions({
 
   const recalcMonthMutation = useMutation({
     mutationFn: async () =>
-      api("/admin/billing/recalculate", tok, {
+      api<BillingPeriodActionResult>("/admin/billing/recalculate", tok, {
         method: "POST",
         body: JSON.stringify({ apartment_id: apartmentId, year: period.year, month: period.month }),
       }),
-    onSuccess: async () => {
-      pushToast("Місяць перераховано", "success");
+    onSuccess: async (result) => {
+      if (result.recalculated_count > 1) {
+        const affectedLabels = result.recalculated_periods.map((item) => item.label).join(", ");
+        pushToast(`Перераховано ${result.recalculated_count} періоди: ${affectedLabels}`, "success");
+      } else {
+        pushToast("Місяць перераховано", "success");
+      }
       await reload();
     },
     onError: (e: Error) => pushToast(e.message || "Не вдалося перерахувати місяць", "error"),
   });
 
-  const toggleLockMonthMutation = useMutation({
+  const confirmMonthMutation = useMutation({
     mutationFn: async () => {
-      const path = calcLocked ? "/admin/billing/unlock" : "/admin/billing/lock";
-      await api(path, tok, {
+      const path = "/admin/billing/lock";
+      return api<BillingPeriodActionResult>(path, tok, {
         method: "POST",
         body: JSON.stringify({ apartment_id: apartmentId, year: period.year, month: period.month }),
       });
     },
-    onSuccess: async () => {
-      pushToast(calcLocked ? "Період розблоковано" : "Період підтверджено", "success");
+    onSuccess: async (result) => {
+      if (result.recalculated_count > 1) {
+        const affectedLabels = result.recalculated_periods.map((item) => item.label).join(", ");
+        pushToast(`Період підтверджено. Оновлено ${result.recalculated_count} періоди: ${affectedLabels}`, "success");
+      } else {
+        pushToast("Період підтверджено", "success");
+      }
       await reload();
     },
-    onError: (e: Error) => pushToast(e.message || "Не вдалося змінити статус періоду", "error"),
+    onError: (e: Error) => pushToast(e.message || "Не вдалося підтвердити період", "error"),
+  });
+
+  const reopenMonthMutation = useMutation({
+    mutationFn: async (reason: string) => {
+      const path = "/admin/billing/unlock";
+      return api<BillingMonthReopenResult>(path, tok, {
+        method: "POST",
+        body: JSON.stringify({
+          apartment_id: apartmentId,
+          year: period.year,
+          month: period.month,
+          reason,
+        }),
+      });
+    },
+    onSuccess: async (result) => {
+      if (result.reopened_count > 1) {
+        const affectedLabels = result.reopened_periods.map((item) => item.label).join(", ");
+        pushToast(`Розблоковано ${result.reopened_count} періоди: ${affectedLabels}`, "success");
+      } else {
+        pushToast("Період розблоковано", "success");
+      }
+      await reload();
+    },
+    onError: (e: Error) => pushToast(e.message || "Не вдалося розблокувати період", "error"),
   });
 
   const saveRow = async (row: CalculationRow) => {
@@ -207,15 +244,20 @@ export function useBillingActions({
     await recalcMonthMutation.mutateAsync();
   };
 
-  const toggleLockMonth = async () => {
-    await toggleLockMonthMutation.mutateAsync();
+  const confirmMonth = async () => {
+    await confirmMonthMutation.mutateAsync();
+  };
+
+  const reopenMonth = async (reason: string) => {
+    await reopenMonthMutation.mutateAsync(reason);
   };
 
   return {
     savePay,
     saveRow,
     recalcMonth,
-    toggleLockMonth,
+    confirmMonth,
+    reopenMonth,
     saveUtilityPaymentMutation,
   };
 }

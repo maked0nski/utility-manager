@@ -29,6 +29,9 @@ from app.models import (
     AutomationRunLog,
     BillingChangeLog,
     BillingLock,
+    BillingMonthSnapshot,
+    BillingStatement,
+    BillingStatementStatus,
     ChargeLineKind,
     ChargeMode,
     ContractExtensionType,
@@ -85,10 +88,18 @@ from app.schemas import (
     ApartmentOut,
     ApartmentTariffRowOut,
     BalanceExplainOut,
+    BillingMonthReopenResultOut,
+    BillingMonthReopenRequest,
+    BillingMonthSnapshotOut,
+    BillingPeriodSummaryOut,
     BillingChangeLogOut,
     BillingGenerateRequest,
     BillingLockRequest,
+    BillingPeriodActionResultOut,
     BillingRecalculateRequest,
+    BillingStatementOut,
+    BillingStatementPrepareRequest,
+    BillingStatementSendRequest,
     CalculationRowOut,
     ConnectionChargeLineCreate,
     ConnectionChargeLineOut,
@@ -107,6 +118,7 @@ from app.schemas import (
     MeterTypeUpdate,
     MissingServiceOut,
     InvoiceOut,
+    LiveBalanceSummaryOut,
     MeterCreate,
     MeterUpdate,
     MeterOut,
@@ -772,15 +784,32 @@ def _recalc_invoice(db: Session, invoice: Invoice, carry_over: Decimal) -> None:
     invoice.status = InvoiceStatus.paid if invoice.closing_balance <= 0 else InvoiceStatus.unpaid
 
 
-def _recalc_from_period(db: Session, apartment_id: int, start_year: int, start_month: int) -> None:
-    invoices = db.scalars(select(Invoice).where(Invoice.apartment_id == apartment_id)).all()
-    invoices = sorted(invoices, key=lambda x: _month_key(x.year, x.month))
-    carry = Decimal("0.00")
+def _recalc_from_period(db: Session, apartment_id: int, start_year: int, start_month: int) -> list[tuple[int, int]]:
+    invoices = _invoice_periods_from(db, apartment_id, start_year, start_month)
+    if not invoices:
+        return []
+
+    previous_invoice = db.scalar(
+        select(Invoice)
+        .where(Invoice.apartment_id == apartment_id)
+        .where(
+            or_(
+                Invoice.year < start_year,
+                and_(Invoice.year == start_year, Invoice.month < start_month),
+            )
+        )
+        .order_by(Invoice.year.desc(), Invoice.month.desc(), Invoice.id.desc())
+        .limit(1)
+    )
+    carry = Decimal(previous_invoice.closing_balance).quantize(Decimal("0.01")) if previous_invoice else Decimal("0.00")
+    recalculated_periods: list[tuple[int, int]] = []
     for inv in invoices:
         _sync_invoice_payment_totals(db, apartment_id, inv.year, inv.month)
         _recalc_invoice(db, inv, carry)
         carry = Decimal(inv.closing_balance)
+        recalculated_periods.append((inv.year, inv.month))
     db.commit()
+    return recalculated_periods
 
 
 def _is_month_locked(db: Session, apartment_id: int, year: int, month: int) -> bool:
@@ -822,6 +851,283 @@ def _log_billing_change(
             details_json=json.dumps(details or {}, ensure_ascii=False),
         )
     )
+
+
+def _month_start_end(year: int, month: int) -> tuple[date, date]:
+    start = date(year, month, 1)
+    end = date(year, month, monthrange(year, month)[1])
+    return start, end
+
+
+def _period_label(year: int, month: int) -> str:
+    return f"{month:02d}.{year}"
+
+
+def _future_locked_periods(
+    db: Session,
+    apartment_id: int,
+    year: int,
+    month: int,
+) -> list[BillingLock]:
+    target_key = _month_key(year, month)
+    locks = db.scalars(
+        select(BillingLock)
+        .where(BillingLock.apartment_id == apartment_id)
+        .order_by(BillingLock.year.asc(), BillingLock.month.asc(), BillingLock.id.asc())
+    ).all()
+    return [row for row in locks if _month_key(row.year, row.month) > target_key]
+
+
+def _invoice_periods_from(
+    db: Session,
+    apartment_id: int,
+    start_year: int,
+    start_month: int,
+) -> list[Invoice]:
+    start_key = _month_key(start_year, start_month)
+    invoices = db.scalars(
+        select(Invoice)
+        .where(Invoice.apartment_id == apartment_id)
+        .order_by(Invoice.year.asc(), Invoice.month.asc(), Invoice.id.asc())
+    ).all()
+    return [invoice for invoice in invoices if _month_key(invoice.year, invoice.month) >= start_key]
+
+
+def _mark_snapshot_reopened(
+    snapshot: BillingMonthSnapshot | None,
+    *,
+    reopened_by: str,
+    reason: str,
+) -> None:
+    if snapshot is None:
+        return
+    snapshot.status = "reopened"
+    snapshot.reopened_at = datetime.now(UTC)
+    snapshot.reopened_by = reopened_by
+    snapshot.reopen_reason = reason
+
+
+def _serialize_calc_row(row: CalculationRowOut) -> dict:
+    payload = row.model_dump()
+    for key, value in list(payload.items()):
+        if isinstance(value, Decimal):
+            payload[key] = str(value)
+    return payload
+
+
+def _deserialize_calc_rows(rows_json: str | None) -> list[CalculationRowOut]:
+    if not rows_json:
+        return []
+    try:
+        raw = json.loads(rows_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(raw, list):
+        return []
+    rows: list[CalculationRowOut] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        try:
+            rows.append(CalculationRowOut(**item))
+        except Exception:
+            continue
+    return rows
+
+
+def _snapshot_out(snapshot: BillingMonthSnapshot | None) -> BillingMonthSnapshotOut | None:
+    if snapshot is None:
+        return None
+    return BillingMonthSnapshotOut(
+        id=snapshot.id,
+        apartment_id=snapshot.apartment_id,
+        year=snapshot.year,
+        month=snapshot.month,
+        status=snapshot.status,
+        opening_balance=Decimal(snapshot.opening_balance),
+        utility_accrual=Decimal(snapshot.utility_accrual),
+        compensation_total=Decimal(snapshot.compensation_total),
+        month_total=Decimal(snapshot.month_total),
+        payments_in_month=Decimal(snapshot.payments_in_month),
+        closing_balance=Decimal(snapshot.closing_balance),
+        confirmed_at=snapshot.confirmed_at,
+        confirmed_by=snapshot.confirmed_by,
+        reopened_at=snapshot.reopened_at,
+        reopened_by=snapshot.reopened_by,
+        reopen_reason=snapshot.reopen_reason,
+        rows=_deserialize_calc_rows(snapshot.rows_json),
+    )
+
+
+def _statement_out(statement: BillingStatement | None) -> BillingStatementOut | None:
+    if statement is None:
+        return None
+    payload_rows = []
+    if statement.payload_json:
+        try:
+            parsed = json.loads(statement.payload_json)
+            payload_rows = parsed.get("rows", []) if isinstance(parsed, dict) else []
+        except json.JSONDecodeError:
+            payload_rows = []
+    rows: list[CalculationRowOut] = []
+    for item in payload_rows:
+        if isinstance(item, dict):
+            try:
+                rows.append(CalculationRowOut(**item))
+            except Exception:
+                continue
+    return BillingStatementOut(
+        id=statement.id,
+        apartment_id=statement.apartment_id,
+        snapshot_id=statement.snapshot_id,
+        year=statement.year,
+        month=statement.month,
+        version=statement.version,
+        status=statement.status,
+        generated_at=statement.generated_at,
+        generated_by=statement.generated_by,
+        sent_at=statement.sent_at,
+        sent_channel=statement.sent_channel,
+        sent_to=statement.sent_to,
+        month_closing_balance_snapshot=Decimal(statement.month_closing_balance_snapshot),
+        payments_after_month_to_generated_at=Decimal(statement.payments_after_month_to_generated_at),
+        balance_due_on_generated_at=Decimal(statement.balance_due_on_generated_at),
+        note=statement.note,
+        rows=rows,
+    )
+
+
+def _build_month_snapshot(
+    db: Session,
+    apartment_id: int,
+    year: int,
+    month: int,
+    *,
+    confirmed_by: str | None = None,
+) -> BillingMonthSnapshot:
+    snapshot = db.scalar(
+        select(BillingMonthSnapshot).where(
+            BillingMonthSnapshot.apartment_id == apartment_id,
+            BillingMonthSnapshot.year == year,
+            BillingMonthSnapshot.month == month,
+        )
+    )
+    invoice = db.scalar(select(Invoice).where(and_(Invoice.apartment_id == apartment_id, Invoice.year == year, Invoice.month == month)))
+    rows = _build_period_rows(db, apartment_id, year, month, invoice)
+    opening_balance = _confirmed_previous_utility_debt(db, apartment_id, year, month)
+    utility_accrual = sum(
+        (Decimal(row.amount) for row in rows if not row.service_name.startswith("Відшкодування:")),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+    compensation_total = (
+        sum(
+            (abs(Decimal(row.amount)) for row in rows if row.service_name.startswith("Відшкодування:")),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+    )
+    month_total = (utility_accrual - compensation_total).quantize(Decimal("0.01"))
+    payments_in_month = _payments_sum_by_received_month(db, apartment_id, year, month)
+    closing_balance = (opening_balance + month_total - payments_in_month).quantize(Decimal("0.01"))
+    rows_json = json.dumps([_serialize_calc_row(row) for row in rows], ensure_ascii=False)
+
+    if snapshot is None:
+        snapshot = BillingMonthSnapshot(
+            apartment_id=apartment_id,
+            year=year,
+            month=month,
+        )
+        db.add(snapshot)
+
+    snapshot.status = "confirmed"
+    snapshot.opening_balance = opening_balance
+    snapshot.utility_accrual = utility_accrual
+    snapshot.compensation_total = compensation_total
+    snapshot.month_total = month_total
+    snapshot.payments_in_month = payments_in_month
+    snapshot.closing_balance = closing_balance
+    snapshot.rows_json = rows_json
+    snapshot.confirmed_at = datetime.now(UTC)
+    snapshot.confirmed_by = confirmed_by
+    snapshot.reopened_at = None
+    snapshot.reopened_by = None
+    snapshot.reopen_reason = None
+    return snapshot
+
+
+def _payments_after_month_until(
+    db: Session,
+    apartment_id: int,
+    year: int,
+    month: int,
+    generated_at: datetime,
+) -> tuple[Decimal, UtilityPayment | None]:
+    _, month_end = _month_start_end(year, month)
+    rows = db.scalars(
+        select(UtilityPayment)
+        .where(UtilityPayment.apartment_id == apartment_id)
+        .where(UtilityPayment.paid_at > month_end)
+        .where(UtilityPayment.paid_at <= generated_at.date())
+        .order_by(UtilityPayment.paid_at.asc(), UtilityPayment.id.asc())
+    ).all()
+    total = sum((Decimal(row.amount) for row in rows), Decimal("0.00")).quantize(Decimal("0.01"))
+    latest = rows[-1] if rows else None
+    return total, latest
+
+
+def _prepare_billing_statement(
+    db: Session,
+    apartment_id: int,
+    year: int,
+    month: int,
+    *,
+    generated_by: str | None = None,
+    generated_at: datetime | None = None,
+    note: str | None = None,
+) -> BillingStatement:
+    snapshot = db.scalar(
+        select(BillingMonthSnapshot).where(
+            BillingMonthSnapshot.apartment_id == apartment_id,
+            BillingMonthSnapshot.year == year,
+            BillingMonthSnapshot.month == month,
+        )
+    )
+    if snapshot is None and _is_month_locked(db, apartment_id, year, month):
+        snapshot = _build_month_snapshot(
+            db,
+            apartment_id,
+            year,
+            month,
+            confirmed_by=generated_by,
+        )
+        db.flush()
+    if snapshot is None or snapshot.status != "confirmed":
+        raise HTTPException(status_code=409, detail="Місяць ще не підтверджено.")
+    generated_at = generated_at or datetime.now(UTC)
+    payments_after, _ = _payments_after_month_until(db, apartment_id, year, month, generated_at)
+    latest_version = db.scalar(
+        select(BillingStatement.version)
+        .where(BillingStatement.snapshot_id == snapshot.id)
+        .order_by(BillingStatement.version.desc())
+        .limit(1)
+    )
+    next_version = (latest_version or 0) + 1
+    statement = BillingStatement(
+        apartment_id=apartment_id,
+        snapshot_id=snapshot.id,
+        year=year,
+        month=month,
+        version=next_version,
+        status=BillingStatementStatus.prepared,
+        generated_at=generated_at,
+        generated_by=generated_by,
+        month_closing_balance_snapshot=Decimal(snapshot.closing_balance),
+        payments_after_month_to_generated_at=payments_after,
+        balance_due_on_generated_at=(Decimal(snapshot.closing_balance) - payments_after).quantize(Decimal("0.01")),
+        payload_json=json.dumps({"rows": [_serialize_calc_row(row) for row in _deserialize_calc_rows(snapshot.rows_json)]}, ensure_ascii=False),
+        note=note,
+    )
+    db.add(statement)
+    return statement
 
 
 def _tenant_out(tenant: Tenant | None) -> TenantOut | None:
@@ -2103,7 +2409,7 @@ def generate_billing(payload: BillingGenerateRequest, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail=str(error))
 
 
-@router.post("/billing/recalculate", dependencies=[Depends(require_write_access)])
+@router.post("/billing/recalculate", response_model=BillingPeriodActionResultOut, dependencies=[Depends(require_write_access)])
 def recalculate_billing(
     payload: BillingRecalculateRequest,
     db: Session = Depends(get_db),
@@ -2123,7 +2429,7 @@ def recalculate_billing(
             generate_invoice(db, payload.apartment_id, payload.year, payload.month)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
-    _recalc_from_period(db, payload.apartment_id, payload.year, payload.month)
+    recalculated_periods = _recalc_from_period(db, payload.apartment_id, payload.year, payload.month)
     _log_billing_change(
         db,
         apartment_id=payload.apartment_id,
@@ -2132,13 +2438,25 @@ def recalculate_billing(
         actor_username=user.username,
         action="month_recalculated",
         entity_type="invoice",
-        details={},
+        details={"recalculated_periods": [_period_label(year, month) for year, month in recalculated_periods]},
     )
     db.commit()
-    return {"status": "recalculated"}
+    return {
+        "status": "recalculated",
+        "recalculated_count": len(recalculated_periods),
+        "recalculated_periods": [
+            {
+                "year": year,
+                "month": month,
+                "label": _period_label(year, month),
+                "reason": f"Перераховано від {_period_label(payload.year, payload.month)}",
+            }
+            for year, month in recalculated_periods
+        ],
+    }
 
 
-@router.post("/billing/lock", dependencies=[Depends(require_write_access)])
+@router.post("/billing/lock", response_model=BillingPeriodActionResultOut, dependencies=[Depends(require_write_access)])
 def lock_billing_month(
     payload: BillingLockRequest,
     db: Session = Depends(get_db),
@@ -2146,6 +2464,27 @@ def lock_billing_month(
 ):
     if db.get(Apartment, payload.apartment_id) is None:
         raise HTTPException(status_code=404, detail="Apartment not found.")
+    invoice = db.scalar(
+        select(Invoice).where(
+            and_(
+                Invoice.apartment_id == payload.apartment_id,
+                Invoice.year == payload.year,
+                Invoice.month == payload.month,
+            )
+        )
+    )
+    if invoice is None:
+        try:
+            generate_invoice(db, payload.apartment_id, payload.year, payload.month)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+    snapshot = _build_month_snapshot(
+        db,
+        payload.apartment_id,
+        payload.year,
+        payload.month,
+        confirmed_by=user.username,
+    )
     row = db.scalar(
         select(BillingLock).where(
             and_(
@@ -2157,7 +2496,7 @@ def lock_billing_month(
     )
     if row is None:
         db.add(BillingLock(apartment_id=payload.apartment_id, year=payload.year, month=payload.month))
-        db.commit()
+    recalculated_periods = _recalc_from_period(db, payload.apartment_id, payload.year, payload.month)
     _log_billing_change(
         db,
         apartment_id=payload.apartment_id,
@@ -2166,18 +2505,41 @@ def lock_billing_month(
         actor_username=user.username,
         action="month_locked",
         entity_type="billing_lock",
-        details={},
+        details={
+            "snapshot_id": snapshot.id if snapshot.id else None,
+            "opening_balance": str(snapshot.opening_balance),
+            "month_total": str(snapshot.month_total),
+            "payments_in_month": str(snapshot.payments_in_month),
+            "closing_balance": str(snapshot.closing_balance),
+            "recalculated_periods": [_period_label(year, month) for year, month in recalculated_periods],
+        },
     )
     db.commit()
-    return {"status": "locked"}
+    return {
+        "status": "locked",
+        "recalculated_count": len(recalculated_periods),
+        "recalculated_periods": [
+            {
+                "year": year,
+                "month": month,
+                "label": _period_label(year, month),
+                "reason": f"Підтверджено і перераховано від {_period_label(payload.year, payload.month)}",
+            }
+            for year, month in recalculated_periods
+        ],
+    }
 
 
-@router.post("/billing/unlock", dependencies=[Depends(require_write_access)])
+@router.post("/billing/unlock", response_model=BillingMonthReopenResultOut, dependencies=[Depends(require_write_access)])
 def unlock_billing_month(
-    payload: BillingLockRequest,
+    payload: BillingMonthReopenRequest,
     db: Session = Depends(get_db),
     user: AdminUser = Depends(get_current_admin_user),
 ):
+    if db.get(Apartment, payload.apartment_id) is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+
+    affected_periods: list[dict[str, int | str]] = []
     row = db.scalar(
         select(BillingLock).where(
             and_(
@@ -2189,7 +2551,22 @@ def unlock_billing_month(
     )
     if row is not None:
         db.delete(row)
-        db.commit()
+    snapshot = db.scalar(
+        select(BillingMonthSnapshot).where(
+            BillingMonthSnapshot.apartment_id == payload.apartment_id,
+            BillingMonthSnapshot.year == payload.year,
+            BillingMonthSnapshot.month == payload.month,
+        )
+    )
+    _mark_snapshot_reopened(snapshot, reopened_by=user.username, reason=payload.reason)
+    affected_periods.append(
+        {
+            "year": payload.year,
+            "month": payload.month,
+            "label": _period_label(payload.year, payload.month),
+            "reason": payload.reason,
+        }
+    )
     _log_billing_change(
         db,
         apartment_id=payload.apartment_id,
@@ -2198,10 +2575,162 @@ def unlock_billing_month(
         actor_username=user.username,
         action="month_unlocked",
         entity_type="billing_lock",
-        details={},
+        details={"reason": payload.reason, "snapshot_id": snapshot.id if snapshot else None},
+    )
+
+    future_locks = _future_locked_periods(db, payload.apartment_id, payload.year, payload.month)
+    if future_locks:
+        auto_reason = (
+            f"Автоматично розблоковано після зміни періоду {_period_label(payload.year, payload.month)}"
+        )
+        snapshot_map = {
+            (row.year, row.month): row
+            for row in db.scalars(
+                select(BillingMonthSnapshot).where(BillingMonthSnapshot.apartment_id == payload.apartment_id)
+            ).all()
+        }
+        for future_lock in future_locks:
+            db.delete(future_lock)
+            future_snapshot = snapshot_map.get((future_lock.year, future_lock.month))
+            _mark_snapshot_reopened(future_snapshot, reopened_by=user.username, reason=auto_reason)
+            affected_periods.append(
+                {
+                    "year": future_lock.year,
+                    "month": future_lock.month,
+                    "label": _period_label(future_lock.year, future_lock.month),
+                    "reason": auto_reason,
+                }
+            )
+            _log_billing_change(
+                db,
+                apartment_id=payload.apartment_id,
+                year=future_lock.year,
+                month=future_lock.month,
+                actor_username=user.username,
+                action="month_unlocked_cascade",
+                entity_type="billing_lock",
+                details={
+                    "reason": auto_reason,
+                    "trigger_period": _period_label(payload.year, payload.month),
+                    "snapshot_id": future_snapshot.id if future_snapshot else None,
+                },
+            )
+    db.commit()
+    return {
+        "status": "unlocked",
+        "reopened_periods": affected_periods,
+        "reopened_count": len(affected_periods),
+    }
+
+
+@router.get("/billing/month-snapshots", response_model=BillingMonthSnapshotOut | None)
+def get_billing_month_snapshot(
+    apartment_id: int,
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    if db.get(Apartment, apartment_id) is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+    snapshot = db.scalar(
+        select(BillingMonthSnapshot).where(
+            BillingMonthSnapshot.apartment_id == apartment_id,
+            BillingMonthSnapshot.year == year,
+            BillingMonthSnapshot.month == month,
+        )
+    )
+    return _snapshot_out(snapshot)
+
+
+@router.get("/billing/statements", response_model=list[BillingStatementOut])
+def list_billing_statements(
+    apartment_id: int,
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+):
+    if db.get(Apartment, apartment_id) is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+    statements = db.scalars(
+        select(BillingStatement)
+        .where(BillingStatement.apartment_id == apartment_id)
+        .where(BillingStatement.year == year)
+        .where(BillingStatement.month == month)
+        .order_by(BillingStatement.version.desc(), BillingStatement.id.desc())
+    ).all()
+    return [_statement_out(row) for row in statements if _statement_out(row) is not None]
+
+
+@router.post("/billing/statements/prepare", response_model=BillingStatementOut, dependencies=[Depends(require_write_access)])
+def prepare_billing_statement(
+    payload: BillingStatementPrepareRequest,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(get_current_admin_user),
+):
+    if db.get(Apartment, payload.apartment_id) is None:
+        raise HTTPException(status_code=404, detail="Apartment not found.")
+    statement = _prepare_billing_statement(
+        db,
+        payload.apartment_id,
+        payload.year,
+        payload.month,
+        generated_by=user.username,
+        generated_at=payload.generated_at,
+        note=payload.note,
+    )
+    _log_billing_change(
+        db,
+        apartment_id=payload.apartment_id,
+        year=payload.year,
+        month=payload.month,
+        actor_username=user.username,
+        action="statement_prepared",
+        entity_type="billing_statement",
+        entity_id=statement.id,
+        details={
+            "version": statement.version,
+            "generated_at": statement.generated_at.isoformat(),
+            "balance_due_on_generated_at": str(statement.balance_due_on_generated_at),
+        },
     )
     db.commit()
-    return {"status": "unlocked"}
+    db.refresh(statement)
+    return _statement_out(statement)
+
+
+@router.post("/billing/statements/{statement_id}/send", response_model=BillingStatementOut, dependencies=[Depends(require_write_access)])
+def send_billing_statement(
+    statement_id: int,
+    payload: BillingStatementSendRequest,
+    db: Session = Depends(get_db),
+    user: AdminUser = Depends(get_current_admin_user),
+):
+    statement = db.get(BillingStatement, statement_id)
+    if statement is None:
+        raise HTTPException(status_code=404, detail="Billing statement not found.")
+    statement.status = BillingStatementStatus.sent
+    statement.sent_at = datetime.now(UTC)
+    statement.sent_channel = payload.sent_channel
+    statement.sent_to = payload.sent_to
+    statement.note = payload.note if payload.note is not None else statement.note
+    _log_billing_change(
+        db,
+        apartment_id=statement.apartment_id,
+        year=statement.year,
+        month=statement.month,
+        actor_username=user.username,
+        action="statement_sent",
+        entity_type="billing_statement",
+        entity_id=statement.id,
+        details={
+            "version": statement.version,
+            "sent_channel": statement.sent_channel,
+            "sent_to": statement.sent_to,
+        },
+    )
+    db.commit()
+    db.refresh(statement)
+    return _statement_out(statement)
 
 
 @router.post("/payments/utilities", dependencies=[Depends(require_write_access)])
@@ -2655,6 +3184,26 @@ def apartment_detail(apartment_id: int, year: int | None = None, month: int | No
     )
 
     rows = _build_period_rows(db, apartment_id, year, month, invoice)
+    snapshot = db.scalar(
+        select(BillingMonthSnapshot).where(
+            BillingMonthSnapshot.apartment_id == apartment_id,
+            BillingMonthSnapshot.year == year,
+            BillingMonthSnapshot.month == month,
+        )
+    )
+    calc_locked = _is_month_locked(db, apartment_id, year, month)
+    if snapshot is None and calc_locked:
+        snapshot = _build_month_snapshot(db, apartment_id, year, month)
+        db.commit()
+        db.refresh(snapshot)
+    statement_rows = db.scalars(
+        select(BillingStatement)
+        .where(BillingStatement.apartment_id == apartment_id)
+        .where(BillingStatement.year == year)
+        .where(BillingStatement.month == month)
+        .order_by(BillingStatement.version.desc(), BillingStatement.id.desc())
+    ).all()
+    statement_outs = [item for item in (_statement_out(row) for row in statement_rows) if item is not None]
 
     month_charges_from_rows = sum((Decimal(r.amount) for r in rows), Decimal("0.00")).quantize(Decimal("0.01"))
     current_balance_from_rows = (confirmed_previous_debt + month_charges_from_rows - month_payments).quantize(Decimal("0.01"))
@@ -2665,9 +3214,13 @@ def apartment_detail(apartment_id: int, year: int | None = None, month: int | No
         end_date=report_generated_at,
     )
     report_balance = (confirmed_previous_debt + month_charges_from_rows - report_payments_to_date).quantize(Decimal("0.01"))
+    latest_payment_row = db.scalar(
+        select(UtilityPayment)
+        .where(UtilityPayment.apartment_id == apartment_id)
+        .order_by(UtilityPayment.paid_at.desc(), UtilityPayment.id.desc())
+    )
 
     rent = db.scalar(select(RentLedger).where(and_(RentLedger.apartment_id == apartment_id, RentLedger.year == year, RentLedger.month == month)))
-    calc_locked = _is_month_locked(db, apartment_id, year, month)
     return ApartmentDetailOut(
         apartment_id=apartment.id,
         code=apartment.code,
@@ -2708,6 +3261,17 @@ def apartment_detail(apartment_id: int, year: int | None = None, month: int | No
             report_payment_date=report_payment_row.paid_at if report_payment_row else None,
             report_payment_note=report_payment_row.note if report_payment_row else None,
             report_balance=report_balance,
+        ),
+        live_balance_summary=LiveBalanceSummaryOut(
+            current_balance=actual_current_balance,
+            latest_payment_amount=Decimal(latest_payment_row.amount).quantize(Decimal("0.01")) if latest_payment_row else None,
+            latest_payment_date=latest_payment_row.paid_at if latest_payment_row else None,
+            latest_payment_note=latest_payment_row.note if latest_payment_row else None,
+        ),
+        billing_period_summary=BillingPeriodSummaryOut(
+            month_snapshot=_snapshot_out(snapshot),
+            current_statement=statement_outs[0] if statement_outs else None,
+            statements=statement_outs,
         ),
         rent=(
             RentMonthOut(

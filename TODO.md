@@ -1,22 +1,22 @@
 # UtilityManager TODO (актуальний план)
 
 ## P0 — Нова модель billing/reporting (місячний snapshot + рахунок до відправки)
-- [ ] Зафіксувати `confirmed month snapshot` як окремий незмінний підсумок місяця:
-  - [ ] `opening_balance`
-  - [ ] `utility_accrual`
-  - [ ] `compensation_total`
-  - [ ] `month_total`
-  - [ ] `payments_in_month`
-  - [ ] `closing_balance`
-  - [ ] `confirmed_at/by`
-- [ ] Ввести окрему сутність `billing_statement` / `invoice_snapshot` для рахунку орендарю:
-  - [ ] `generated_at/by`
-  - [ ] `status: draft/prepared/sent/cancelled`
-  - [ ] `month_closing_balance_snapshot`
-  - [ ] `payments_after_month_to_generated_at`
-  - [ ] `balance_due_on_generated_at`
-  - [ ] `sent_at / sent_channel / sent_to`
-  - [ ] `payload_json`
+- [x] Зафіксувати `confirmed month snapshot` як окремий незмінний підсумок місяця:
+  - [x] `opening_balance`
+  - [x] `utility_accrual`
+  - [x] `compensation_total`
+  - [x] `month_total`
+  - [x] `payments_in_month`
+  - [x] `closing_balance`
+  - [x] `confirmed_at/by`
+- [x] Ввести окрему сутність `billing_statement` / `invoice_snapshot` для рахунку орендарю:
+  - [x] `generated_at/by`
+  - [x] `status: draft/prepared/sent/cancelled`
+  - [x] `month_closing_balance_snapshot`
+  - [x] `payments_after_month_to_generated_at`
+  - [x] `balance_due_on_generated_at`
+  - [x] `sent_at / sent_channel / sent_to`
+  - [x] `payload_json`
 - [ ] Розвести бізнес-логіку:
   - [ ] `Підсумок місяця` = тільки рухи всередині місяця
   - [ ] `Рахунок до відправки` = стан на дату формування з урахуванням оплат після закриття місяця
@@ -24,49 +24,52 @@
 - [ ] Підтримати історичне первинне заповнення бази:
   - [ ] режим `initial backfill`
   - [ ] послідовне підтвердження місяців
-  - [ ] контрольоване `reopen` підтверджених місяців з причиною й аудитом
-  - [ ] автоматичний перерахунок усіх наступних місяців після зміни старого confirmed-періоду
+  - [x] контрольоване `reopen` підтверджених місяців з причиною й аудитом
+  - [x] автоматичний перерахунок усіх наступних місяців після зміни старого confirmed-періоду
 
 ### Етап A — БД / доменна модель
-- [ ] Додати таблицю `billing_month_snapshots` або еквівалентну модель confirmed-місяця.
-- [ ] Додати таблицю `billing_statements`.
-- [ ] Додати поле/стан `reopened` і аудит причин перерахунку історії.
-- [ ] Додати індекси для швидкого пошуку snapshot/statement по `apartment_id + year + month`.
+- [x] Додати таблицю `billing_month_snapshots` або еквівалентну модель confirmed-місяця.
+- [x] Додати таблицю `billing_statements`.
+- [x] Додати поле/стан `reopened` і аудит причин перерахунку історії.
+- [x] Додати індекси для швидкого пошуку snapshot/statement по `apartment_id + year + month`.
 
 ### Етап B — Backend
-- [ ] Переробити confirm month: при підтвердженні створювати/оновлювати місячний snapshot.
-- [ ] Додати сервіс побудови `billing statement` від confirmed snapshot + оплат до `generated_at`.
-- [ ] Додати API:
-  - [ ] `POST /billing-statements/prepare`
-  - [ ] `POST /billing-statements/{id}/send`
-  - [ ] `GET /billing-statements?apartment_id&year&month`
-  - [ ] `POST /billing-months/{year}/{month}/reopen`
-- [ ] Винести KPI-обчислення в окремі backend-поля:
-  - [ ] на початок місяця
-  - [ ] на кінець місяця
-  - [ ] live balance today
+- [x] Переробити confirm month: при підтвердженні створювати/оновлювати місячний snapshot.
+- [x] Додати сервіс побудови `billing statement` від confirmed snapshot + оплат до `generated_at`.
+- [x] Додати API:
+  - [x] `POST /billing-statements/prepare`
+  - [x] `POST /billing-statements/{id}/send`
+  - [x] `GET /billing-statements?apartment_id&year&month`
+  - [x] `POST /billing-months/{year}/{month}/reopen`
+- [~] Винести KPI-обчислення в окремі backend-поля:
+  - [x] на початок місяця
+  - [x] на кінець місяця
+  - [x] live balance today
 - [ ] Додати backend тести на сценарії:
   - [ ] оплата після закриття місяця, але до формування рахунку
   - [ ] історичне заповнення заднім числом
   - [ ] reopen і перерахунок наступних місяців
 
 ### Етап C — UI
-- [ ] Переробити верхні KPI:
-  - [ ] `Борг на початок місяця`
-  - [ ] `Нараховано за місяць`
-  - [ ] `Оплачено в місяці`
-  - [ ] `Борг на кінець місяця`
-- [ ] Винести окремо `Поточний баланс` і `Останню оплату`.
-- [ ] Переробити вкладку `Звіт за місяць` у 2 секції:
-  - [ ] `Підсумок місяця`
-  - [ ] `Рахунок до відправки`
-- [ ] Додати статус рахунку `Чернетка / Підготовлено / Відправлено / Скасовано`.
-- [ ] Додати UI для історії сформованих/відправлених рахунків.
-- [ ] Додати UX для `reopen місяця` з попередженням про ланцюговий перерахунок.
+- [x] Переробити верхні KPI:
+  - [x] `Борг на початок місяця`
+  - [x] `Нараховано за місяць`
+  - [x] `Оплачено в місяці`
+  - [x] `Борг на кінець місяця`
+- [x] Винести окремо `Поточний баланс` і `Останню оплату`.
+- [x] Переробити вкладку `Звіт за місяць` у 2 секції:
+  - [x] `Підсумок місяця`
+  - [x] `Рахунок до відправки`
+- [x] Додати статус рахунку `Чернетка / Підготовлено / Відправлено / Скасовано`.
+- [x] Додати UI для історії сформованих/відправлених рахунків.
+- [x] Додати UX для `reopen місяця` з попередженням про ланцюговий перерахунок.
+- [x] При `reopen` автоматично знімати locks з усіх наступних confirmed-місяців і логувати каскадне розблокування.
+- [x] `confirm/recalculate` повертають список фактично перерахованих періодів; UI показує зачеплені місяці після каскадного оновлення.
 
 ### Етап D — Міграція робочого процесу
-- [ ] Перевести поточний `ReportTab` з live-обчислення на snapshot + statement.
-- [ ] Прибрати змішування `на кінець місяця` і `на дату формування` в одному блоці.
+- [x] Перевести поточний `ReportTab` з live-обчислення на snapshot + statement.
+- [x] Прибрати змішування `на кінець місяця` і `на дату формування` в одному блоці.
+- [x] `ReportTab` більше не спирається на frontend fallback через `utility_balance.report_*`, а використовує `snapshot + statement`.
 - [ ] Залишити PDF як експорт, але головною сутністю зробити статус `Відправлено`.
 
 ## Scope-рішення (зафіксовано)
@@ -201,6 +204,7 @@
 - [x] Маскування/розкриття чутливих полів (паролі кабінетів постачальників) у UI-модалці тарифів.
 - [x] Політика паролів + нагадування про ротацію.
 - [x] Обмежити прямий доступ до storage-файлів (через backend `/admin/storage/{path}`).
+- [x] Forgot password для орендаря: email + код доступу + новий пароль, із ревокацією старих сесій.
 - [~] Tenant portal (MVP):
   - [x] Розділено frontend-потоки: `/admin` (адмін) і `/` (орендар).
   - [x] Додано базовий кабінет орендаря: `login/dashboard/history/profile`.

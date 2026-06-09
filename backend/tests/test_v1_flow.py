@@ -794,6 +794,101 @@ def test_tenant_token_lifecycle_refresh_logout_and_revocation():
     assert new_password_login.status_code == 200
 
 
+def test_tenant_forgot_password_resets_password_and_revokes_old_sessions():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    admin_token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Tenant forgot password apartment"},
+        headers=headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    tenant_access_code = f"T-{uuid4().hex[:8].upper()}"
+    tenant = client.post(
+        "/admin/tenants",
+        json={
+            "full_name": "Tenant Forgot Password",
+            "phone": "+380500000021",
+            "email": "tenant-reset@example.com",
+            "access_code": tenant_access_code,
+        },
+        headers=headers,
+    )
+    assert tenant.status_code == 201
+    tenant_id = tenant.json()["id"]
+
+    tenant_update = client.put(
+        f"/admin/tenants/{tenant_id}",
+        json=_tenant_update_payload(
+            full_name="Tenant Forgot Password",
+            primary_phone="+380500000021",
+            email="tenant-reset@example.com",
+            portal_enabled=True,
+            can_submit_meter_readings=True,
+            portal_password="StrongPass1",
+        ),
+        headers=headers,
+    )
+    assert tenant_update.status_code == 200
+
+    tenancy = client.post(
+        "/admin/tenancies",
+        json={"apartment_id": apartment_id, "tenant_id": tenant_id, "start_date": "2026-01-01"},
+        headers=headers,
+    )
+    assert tenancy.status_code == 201
+
+    tenant_login = client.post(
+        "/tenant/login",
+        json={"email": "tenant-reset@example.com", "password": "StrongPass1"},
+    )
+    assert tenant_login.status_code == 200
+    old_access_token = tenant_login.json()["access_token"]
+
+    forgot_password = client.post(
+        "/tenant/forgot-password",
+        json={
+            "email": "tenant-reset@example.com",
+            "access_code": tenant_access_code,
+            "new_password": "StrongPass2",
+            "confirm_password": "StrongPass2",
+        },
+    )
+    assert forgot_password.status_code == 200
+    assert forgot_password.json() == {"status": "password_reset", "session_revoked": True}
+
+    me_after_reset = client.get("/tenant/me", headers={"Authorization": f"Bearer {old_access_token}"})
+    assert me_after_reset.status_code == 401
+
+    old_password_login = client.post(
+        "/tenant/login",
+        json={"email": "tenant-reset@example.com", "password": "StrongPass1"},
+    )
+    assert old_password_login.status_code == 401
+
+    new_password_login = client.post(
+        "/tenant/login",
+        json={"email": "tenant-reset@example.com", "password": "StrongPass2"},
+    )
+    assert new_password_login.status_code == 200
+
+    invalid_access_code = client.post(
+        "/tenant/forgot-password",
+        json={
+            "email": "tenant-reset@example.com",
+            "access_code": "WRONG-CODE",
+            "new_password": "StrongPass3",
+            "confirm_password": "StrongPass3",
+        },
+    )
+    assert invalid_access_code.status_code == 403
+
+
 def test_tenant_reading_api_conflict_and_not_found_and_forbidden():
     login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
     assert login.status_code == 200

@@ -83,6 +83,8 @@ export function DashboardContent({
   pushToast,
   dt,
   payments,
+  prepareBillingStatement,
+  sendBillingStatement,
   toggleSort,
   sortIcon,
   sortedRows,
@@ -96,7 +98,8 @@ export function DashboardContent({
   changed,
   saveRow,
   recalcMonth,
-  toggleLockMonth,
+  confirmMonth,
+  reopenMonth,
   resetSortDefault,
   accr,
   history,
@@ -211,6 +214,8 @@ export function DashboardContent({
   pushToast: (message: string, type?: "success" | "error" | "info") => void;
   dt: (x: string | Date | null | undefined) => string;
   payments: UtilityPaymentItem[];
+  prepareBillingStatement: () => Promise<void>;
+  sendBillingStatement: (statementId: number) => Promise<void>;
   toggleSort: any;
   sortIcon: any;
   sortedRows: any[];
@@ -224,7 +229,8 @@ export function DashboardContent({
   changed: (row: any) => boolean;
   saveRow: (row: any) => Promise<void>;
   recalcMonth: () => Promise<void>;
-  toggleLockMonth: () => Promise<void>;
+  confirmMonth: () => Promise<void>;
+  reopenMonth: (reason: string) => Promise<void>;
   resetSortDefault: () => void;
   accr: number;
   history: any[];
@@ -582,7 +588,7 @@ export function DashboardContent({
   const periodEndIso = `${String(p.year).padStart(4, "0")}-${String(p.month).padStart(2, "0")}-${String(
     new Date(p.year, p.month, 0).getDate(),
   ).padStart(2, "0")}`;
-  const latestPayment = [...payments]
+  const latestPaymentInPeriod = [...payments]
     .filter((row) => {
       const paidAt = String(row?.paid_at || "");
       return paidAt && paidAt <= periodEndIso;
@@ -592,13 +598,20 @@ export function DashboardContent({
     if (dateCmp !== 0) return dateCmp;
     return b.id - a.id;
     })[0] || null;
-  const debtNowValue = (() => {
-    const previousDebt = Number(detail?.utility_balance?.previous_month_debt || 0);
-    const monthPayments = Number(detail?.utility_balance?.month_payments || 0);
-    const currentBalance = Number(detail?.utility_balance?.current_balance || 0);
-    // For draft periods, ignore draft accruals and keep only confirmed debt adjusted by received payments in selected month.
-    return detail?.calc_locked ? currentBalance : previousDebt - monthPayments;
-  })();
+  const liveSummary = detail?.live_balance_summary || null;
+  const liveLatestPayment = liveSummary?.latest_payment_date
+    ? {
+        amount: liveSummary?.latest_payment_amount ?? null,
+        paid_at: liveSummary?.latest_payment_date ?? null,
+        note: liveSummary?.latest_payment_note ?? null,
+      }
+    : null;
+  const monthSnapshot = detail?.billing_period_summary?.month_snapshot || null;
+  const openingBalanceValue = monthSnapshot?.opening_balance ?? detail?.utility_balance?.previous_month_debt ?? 0;
+  const monthAccrualValue = monthSnapshot?.month_total ?? detail?.utility_balance?.month_charges ?? 0;
+  const monthPaymentsValue = monthSnapshot?.payments_in_month ?? detail?.utility_balance?.month_payments ?? 0;
+  const closingBalanceValue = monthSnapshot?.closing_balance ?? detail?.utility_balance?.current_balance ?? 0;
+  const liveCurrentBalanceValue = liveSummary?.current_balance ?? detail?.utility_balance?.actual_current_balance ?? closingBalanceValue;
 
   const openPeriodPicker = () => {
     const picker = periodPickerRef.current;
@@ -659,17 +672,42 @@ export function DashboardContent({
           </div>
           <div className="summary-grid dashboard-kpi-strip">
             <div className="metric">
-              <div className="label">Борг з минулого</div>
-              <div className="value">{money(detail.utility_balance?.previous_month_debt || 0)}</div>
+              <div className="label">Борг на початок місяця</div>
+              <div className="value">{money(openingBalanceValue)}</div>
             </div>
             <div className="metric">
-              <div className="label">Борг на зараз</div>
-              <div className="value">{money(debtNowValue)}</div>
+              <div className="label">Нараховано за місяць</div>
+              <div className="value">{money(monthAccrualValue)}</div>
             </div>
             <div className="metric">
-              <div className="label">Остання оплата</div>
-              <div className="value">{latestPayment ? money(latestPayment.amount) : "—"}</div>
-              <small>{latestPayment ? dt(latestPayment.paid_at) : `Станом на ${periodLabel(p.year, p.month)}`}</small>
+              <div className="label">Оплачено в місяці</div>
+              <div className="value">{money(monthPaymentsValue)}</div>
+              <small>{`Станом на ${periodLabel(p.year, p.month)}`}</small>
+            </div>
+            <div className="metric">
+              <div className="label">Борг на кінець місяця</div>
+              <div className="value">{money(closingBalanceValue)}</div>
+              <small>
+                {latestPaymentInPeriod
+                  ? `Остання оплата в межах місяця: ${money(latestPaymentInPeriod.amount)} • ${dt(latestPaymentInPeriod.paid_at)}`
+                  : "Оплат у межах цього місяця ще немає"}
+              </small>
+            </div>
+          </div>
+          <div className="summary-grid dashboard-live-strip">
+            <div className="metric">
+              <div className="label">Поточний баланс на сьогодні</div>
+              <div className="value">{money(liveCurrentBalanceValue)}</div>
+              <small>Живий стан взаєморозрахунків з урахуванням усіх отриманих оплат на сьогодні.</small>
+            </div>
+            <div className="metric">
+              <div className="label">Остання отримана оплата</div>
+              <div className="value">{liveLatestPayment ? money(liveLatestPayment.amount) : "—"}</div>
+              <small>
+                {liveLatestPayment
+                  ? `${dt(liveLatestPayment.paid_at)}${liveLatestPayment.note ? ` • ${liveLatestPayment.note}` : ""}`
+                  : "Ще немає жодної зафіксованої оплати"}
+              </small>
             </div>
           </div>
           <p className={detail.rent?.confirmed ? "helper" : "error"}>
@@ -749,7 +787,8 @@ export function DashboardContent({
               changed={changed}
               saveRow={saveRow}
               recalcMonth={recalcMonth}
-              toggleLockMonth={toggleLockMonth}
+              confirmMonth={confirmMonth}
+              reopenMonth={reopenMonth}
               resetSortDefault={resetSortDefault}
               accr={accr}
               history={history}
@@ -879,6 +918,8 @@ export function DashboardContent({
               accr={accr}
               rows={sortedRows}
               periodLabel={periodLabel(p.year, p.month)}
+              prepareStatement={prepareBillingStatement}
+              sendStatement={sendBillingStatement}
             />
           )}
           {tab === "property" && (

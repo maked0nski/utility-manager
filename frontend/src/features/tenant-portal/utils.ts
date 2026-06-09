@@ -17,6 +17,7 @@ export function localizeApiError(error: unknown, fallback: string): string {
   if (message === "Tenant portal is disabled.") return "Кабінет орендаря вимкнений адміністратором.";
   if (message === "Tenant not found.") return "Орендаря з таким email не знайдено.";
   if (message === "Invalid access code.") return "Невірний код доступу орендаря.";
+  if (message === "Password is not set.") return "Для цього кабінету ще не налаштовано пароль.";
   if (message === "Email already exists.") return "Такий email вже використовується.";
   if (message === "Password confirmation does not match.") return "Підтвердження пароля не збігається.";
   if (message === "Password must be at least 8 characters.") return "Новий пароль має містити щонайменше 8 символів.";

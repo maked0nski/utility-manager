@@ -151,7 +151,19 @@
   gap: 10px;
 }
 
+.dashboard-live-strip {
+  margin: 0 0 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 10px;
+}
+
 .dashboard-kpi-strip .metric {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.dashboard-live-strip .metric {
   min-width: 0;
   padding: 10px 12px;
 }
@@ -161,7 +173,16 @@
   overflow-wrap: anywhere;
 }
 
+.dashboard-live-strip .metric .label,
+.dashboard-live-strip .metric small {
+  overflow-wrap: anywhere;
+}
+
 .dashboard-kpi-strip .metric .value {
+  font-size: clamp(18px, 1.6vw, 22px);
+}
+
+.dashboard-live-strip .metric .value {
   font-size: clamp(18px, 1.6vw, 22px);
 }
 
@@ -899,6 +920,21 @@ tbody tr:hover td {
   background: var(--surface);
 }
 
+.report-version-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 14px;
+}
+
+.report-version-toggle input {
+  margin: 0;
+}
+
 .report-header {
   display: flex;
   justify-content: space-between;
@@ -936,6 +972,15 @@ tbody tr:hover td {
   display: flex;
   justify-content: space-between;
   font-size: 14px;
+}
+
+.report-totals-compact {
+  margin-top: 10px;
+}
+
+.report-totals-compact > div {
+  font-size: 15px;
+  padding: 4px 0;
 }
 
 .modal-backdrop {

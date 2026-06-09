@@ -1,4 +1,5 @@
-import { In, Se } from "@/shared/ui/form-controls";
+import { useState } from "react";
+import { In } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
 import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from "react";
 import type { BillingHistoryItem, CalculationRow, MeterExpectedRegistersResult } from "@/shared/api/types";
@@ -54,7 +55,8 @@ interface CalculationTabProps {
   changed: (row: CalculationRow) => boolean;
   saveRow: (row: CalculationRow) => Promise<void>;
   recalcMonth: () => Promise<void>;
-  toggleLockMonth: () => Promise<void>;
+  confirmMonth: () => Promise<void>;
+  reopenMonth: (reason: string) => Promise<void>;
   resetSortDefault: () => void;
   accr: number;
   history?: BillingHistoryItem[];
@@ -99,7 +101,8 @@ export function CalculationTab({
   changed,
   saveRow,
   recalcMonth,
-  toggleLockMonth,
+  confirmMonth,
+  reopenMonth,
   resetSortDefault,
   accr,
   history = [],
@@ -208,6 +211,30 @@ export function CalculationTab({
     if (mode === "day_night") return "День/Ніч";
     if (mode === "tri_zone") return "Тризонний";
     return mode || "";
+  };
+  const [reopenModalOpen, setReopenModalOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopenSaving, setReopenSaving] = useState(false);
+
+  const handleLockAction = async () => {
+    if (!detail.calc_locked) {
+      await confirmMonth();
+      return;
+    }
+    setReopenModalOpen(true);
+  };
+
+  const submitReopen = async () => {
+    const reason = reopenReason.trim();
+    if (!reason) return;
+    setReopenSaving(true);
+    try {
+      await reopenMonth(reason);
+      setReopenModalOpen(false);
+      setReopenReason("");
+    } finally {
+      setReopenSaving(false);
+    }
   };
 
   return (
@@ -370,8 +397,8 @@ export function CalculationTab({
           <button className="secondary" onClick={() => void openBatchReadingModal()}>
             Внести показники
           </button>
-          <button className="secondary" onClick={toggleLockMonth}>
-            {detail.calc_locked ? "Зняти підтвердження місяця" : "Підтвердити нарахування"}
+          <button className="secondary" onClick={() => void handleLockAction()}>
+            {detail.calc_locked ? "Розблокувати місяць" : "Підтвердити нарахування"}
           </button>
           <button className="secondary" onClick={resetSortDefault}>
             Порядок за замовчуванням
@@ -472,6 +499,37 @@ export function CalculationTab({
               </div>
             </>
           )}
+        </Modal>
+      )}
+      {reopenModalOpen && (
+        <Modal title="Розблокувати підтверджений місяць" onClose={() => setReopenModalOpen(false)}>
+          <p className="helper">
+            Після розблокування цей місяць можна буде змінювати. Наступні періоди можуть потребувати повторної
+            перевірки та перерахунку.
+          </p>
+          <In
+            label="Причина розблокування"
+            tip="Причина розблокування"
+            help="Коротко опишіть, чому потрібно змінити вже підтверджений місяць."
+            placeholder="Наприклад: знайшли помилку в оплаті або компенсації"
+            value={reopenReason}
+            onChange={(e: InputEvt) => setReopenReason(e.target.value)}
+            onKeyDown={() => {}}
+          />
+          <div className="row-actions top-gap">
+            <button onClick={() => void submitReopen()} disabled={reopenSaving || !reopenReason.trim()}>
+              {reopenSaving ? "Розблокування..." : "Розблокувати місяць"}
+            </button>
+            <button
+              className="secondary"
+              onClick={() => {
+                setReopenModalOpen(false);
+                setReopenReason("");
+              }}
+            >
+              Скасувати
+            </button>
+          </div>
         </Modal>
       )}
     </>

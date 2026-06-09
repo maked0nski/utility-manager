@@ -373,7 +373,7 @@ export function AdminApp() {
     asInt,
   });
 
-  const { savePay, saveRow, recalcMonth, toggleLockMonth } = useBillingActions({
+  const { savePay, saveRow, recalcMonth, confirmMonth, reopenMonth } = useBillingActions({
     tok,
     apartmentId: sel?.apartment_id,
     period: p,
@@ -609,6 +609,29 @@ export function AdminApp() {
     } finally {
       setBatchReadingSaving(false);
     }
+  };
+  const prepareBillingStatement = async () => {
+    if (!sel?.apartment_id) return;
+    await api("/admin/billing/statements/prepare", tok, {
+      method: "POST",
+      body: {
+        apartment_id: sel.apartment_id,
+        year: p.year,
+        month: p.month,
+      },
+    });
+    pushToast("Рахунок підготовлено", "success");
+    await reload();
+  };
+  const sendBillingStatement = async (statementId: number) => {
+    await api(`/admin/billing/statements/${statementId}/send`, tok, {
+      method: "POST",
+      body: {
+        sent_channel: "manual",
+      },
+    });
+    pushToast("Рахунок позначено як відправлений", "success");
+    await reload();
   };
   const saveAutomation = async (
     row: AutomationItem,
@@ -1152,6 +1175,8 @@ export function AdminApp() {
         pushToast={pushToast}
         dt={dt}
         payments={payments}
+        prepareBillingStatement={prepareBillingStatement}
+        sendBillingStatement={sendBillingStatement}
         toggleSort={toggleSort}
         sortIcon={sortIcon}
         sortedRows={sortedRows}
@@ -1165,7 +1190,8 @@ export function AdminApp() {
         changed={changed}
         saveRow={saveRow}
         recalcMonth={recalcMonth}
-        toggleLockMonth={toggleLockMonth}
+        confirmMonth={confirmMonth}
+        reopenMonth={reopenMonth}
         resetSortDefault={resetSortDefault}
         accr={accr}
         history={history}

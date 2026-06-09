@@ -21,6 +21,7 @@ from app.schemas import (
     TenantLoginPayload,
     TenantMeOut,
     TenantPasswordResetPayload,
+    TenantPasswordResetResult,
     TenantProfileUpdate,
     TenantRefreshPayload,
     TenantSessionOut,
@@ -189,8 +190,7 @@ def tenant_refresh(payload: TenantRefreshPayload, db: Session = Depends(get_db))
     )
 
 
-@router.post("/password-reset")
-def tenant_password_reset(payload: TenantPasswordResetPayload, db: Session = Depends(get_db)):
+def _reset_tenant_password(payload: TenantPasswordResetPayload, db: Session) -> TenantPasswordResetResult:
     email = payload.email.strip().lower()
     access_code = payload.access_code.strip()
     tenant = db.scalar(select(Tenant).where(Tenant.email == email))
@@ -206,7 +206,17 @@ def tenant_password_reset(payload: TenantPasswordResetPayload, db: Session = Dep
     tenant.password_hash = hash_password(payload.new_password)
     tenant.session_version = int(tenant.session_version or 1) + 1
     db.commit()
-    return {"status": "password_reset", "session_revoked": True}
+    return TenantPasswordResetResult(status="password_reset", session_revoked=True)
+
+
+@router.post("/forgot-password", response_model=TenantPasswordResetResult)
+def tenant_forgot_password(payload: TenantPasswordResetPayload, db: Session = Depends(get_db)):
+    return _reset_tenant_password(payload, db)
+
+
+@router.post("/password-reset", response_model=TenantPasswordResetResult)
+def tenant_password_reset(payload: TenantPasswordResetPayload, db: Session = Depends(get_db)):
+    return _reset_tenant_password(payload, db)
 
 
 @router.get("/me", response_model=TenantMeOut)

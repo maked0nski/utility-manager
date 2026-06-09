@@ -350,6 +350,78 @@ def _ensure_connection_charge_lines_table(db: Session) -> None:
         db.commit()
 
 
+def _ensure_billing_month_snapshots_table(db: Session) -> None:
+    if _has_table(db, "billing_month_snapshots"):
+        return
+    db.execute(
+        text(
+            """
+            CREATE TABLE billing_month_snapshots (
+                id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                apartment_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'confirmed',
+                opening_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                utility_accrual NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                compensation_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                month_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                payments_in_month NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                closing_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                rows_json TEXT NULL,
+                confirmed_at DATETIME NULL,
+                confirmed_by VARCHAR(64) NULL,
+                reopened_at DATETIME NULL,
+                reopened_by VARCHAR(64) NULL,
+                reopen_reason VARCHAR(255) NULL,
+                created_at DATETIME NULL,
+                updated_at DATETIME NULL,
+                CONSTRAINT uq_billing_month_snapshot_period UNIQUE (apartment_id, year, month),
+                INDEX ix_billing_month_snapshots_period (apartment_id, year, month),
+                INDEX ix_billing_month_snapshots_status (status)
+            )
+            """
+        )
+    )
+    db.commit()
+
+
+def _ensure_billing_statements_table(db: Session) -> None:
+    if _has_table(db, "billing_statements"):
+        return
+    db.execute(
+        text(
+            """
+            CREATE TABLE billing_statements (
+                id INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                apartment_id INTEGER NOT NULL,
+                snapshot_id INTEGER NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
+                status VARCHAR(32) NOT NULL DEFAULT 'draft',
+                generated_at DATETIME NULL,
+                generated_by VARCHAR(64) NULL,
+                sent_at DATETIME NULL,
+                sent_channel VARCHAR(32) NULL,
+                sent_to VARCHAR(255) NULL,
+                month_closing_balance_snapshot NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                payments_after_month_to_generated_at NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                balance_due_on_generated_at NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                payload_json TEXT NULL,
+                note TEXT NULL,
+                created_at DATETIME NULL,
+                updated_at DATETIME NULL,
+                CONSTRAINT uq_billing_statements_snapshot_version UNIQUE (snapshot_id, version),
+                INDEX ix_billing_statements_period (apartment_id, year, month),
+                INDEX ix_billing_statements_status (status)
+            )
+            """
+        )
+    )
+    db.commit()
+
+
 def _ensure_provider_import_rows_service_catalog_code(db: Session) -> None:
     if not _has_table(db, "provider_import_rows"):
         return
@@ -811,6 +883,8 @@ def run_startup_migrations(db: Session) -> None:
     _ensure_service_catalog_table(db)
     _ensure_apartment_service_connections_table(db)
     _ensure_connection_charge_lines_table(db)
+    _ensure_billing_month_snapshots_table(db)
+    _ensure_billing_statements_table(db)
     _ensure_provider_import_rows_service_catalog_code(db)
     _ensure_automation_cycle_runs_table(db)
     _ensure_automation_cycle_phase_runs_table(db)

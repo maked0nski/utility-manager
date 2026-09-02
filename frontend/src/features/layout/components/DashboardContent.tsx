@@ -928,7 +928,7 @@ export function DashboardContent({
                         {" • "}
                         № {meter.serial_number || "—"}
                       </div>
-                      <div className="meter-item-meta">Встановлено: {meter.installed_at || "—"}</div>
+                      <div className="meter-item-meta">Встановлено: {dt(meter.installed_at) || "—"}</div>
                     </button>
                   ))}
                 </div>
@@ -969,7 +969,7 @@ export function DashboardContent({
                             {item.serial_number ? ` / ${item.serial_number}` : ""}
                           </td>
                           <td>
-                            {item.last_service_at || "—"} / {item.next_service_at || "—"}
+                            {dt(item.last_service_at) || "—"} / {dt(item.next_service_at) || "—"}
                           </td>
                           <td>{item.service_interval_days ?? "—"}</td>
                           <td>{item.is_active ? "Активне" : "Архів"}</td>

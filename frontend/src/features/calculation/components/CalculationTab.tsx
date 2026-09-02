@@ -461,7 +461,7 @@ export function CalculationTab({
                     <h4>{meta.meter_service_name}</h4>
                     <div className="helper">
                       режим: {meta.plan_mode}
-                      {meta.effective_from ? ` • діє з ${meta.effective_from}` : ""}
+                      {meta.effective_from ? ` • діє з ${dt(meta.effective_from)}` : ""}
                     </div>
                     <div className="forms-grid compact-grid top-gap">
                       {meta.registers.map((register) => (

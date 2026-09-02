@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { In, Se, Ta } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
-import { unitLabel } from "@/shared/utils/format";
+import { dt, unitLabel } from "@/shared/utils/format";
 import type { ElectricityPlanForm } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import type {
   ApartmentServiceConnectionItem,
@@ -541,8 +541,8 @@ export function ObjectServicesTab({
                 <div className="service-connection-meta">
                   <span>Постачальник: <strong>{provider?.name_full || "Не задано"}</strong></span>
                   <span>Особовий рахунок: <strong>{connection.personal_account || "—"}</strong></span>
-                  <span>Діє з: <strong>{connection.started_at}</strong></span>
-                  <span>Завершення: <strong>{connection.ended_at || "без дати"}</strong></span>
+                  <span>Діє з: <strong>{dt(connection.started_at)}</strong></span>
+                  <span>Завершення: <strong>{connection.ended_at ? dt(connection.ended_at) : "без дати"}</strong></span>
                 </div>
                 <div className="service-connection-overview">
                   <span>Рядків: <strong>{connection.charge_lines.length}</strong></span>

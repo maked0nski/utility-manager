@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { In, Se, Ta } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
 import { dt, unitLabel } from "@/shared/utils/format";
+import { todayIso } from "@/shared/utils/date";
 import type { ElectricityPlanForm } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import type {
   ApartmentServiceConnectionItem,
@@ -257,10 +258,19 @@ export function ObjectServicesTab({
   const [expandedConnectionId, setExpandedConnectionId] = useState<number | null>(null);
   const [form, setForm] = useState<ConnectionEditorForm>(buildDefaultForm());
   const [electricityPlanOpen, setElectricityPlanOpen] = useState(false);
+  const [showLineHistory, setShowLineHistory] = useState(false);
 
   const serviceMap = useMemo(() => new Map(services.map((item) => [item.id, item])), [services]);
   const providerMap = useMemo(() => new Map(providers.map((item) => [item.id, item])), [providers]);
   const meterMap = useMemo(() => new Map(meters.map((item) => [item.id, item])), [meters]);
+
+  const today = todayIso();
+  const activeLineEntries: Array<{ line: EditableChargeLine; index: number }> = [];
+  const historicalLineEntries: Array<{ line: EditableChargeLine; index: number }> = [];
+  form.charge_lines.forEach((line, index) => {
+    const isHistorical = !!line.effective_to && line.effective_to < today;
+    (isHistorical ? historicalLineEntries : activeLineEntries).push({ line, index });
+  });
 
   const selectedService = services.find((item) => String(item.id) === form.service_catalog_id) || null;
   const requiredDerivedService = selectedService?.derived_from_service_id
@@ -359,6 +369,7 @@ export function ObjectServicesTab({
 
   const openEdit = (connection: ApartmentServiceConnectionItem) => {
     setEditingConnectionId(connection.id);
+    setShowLineHistory(false);
     setForm({
       service_catalog_id: String(connection.service_catalog_id),
       provider_id: connection.provider_id ? String(connection.provider_id) : "",
@@ -483,6 +494,105 @@ export function ObjectServicesTab({
     }
     closeModal();
   };
+
+  const renderChargeLineEditor = (line: EditableChargeLine, index: number) => (
+    <div key={`${line.label}-${index}`} className={`service-line-editor ${lineToneClass(line)}`}>
+      <div className="service-line-editor-toolbar">
+        <div className="service-line-title">
+          <strong>{line.label || `Рядок ${index + 1}`}</strong>
+          <span className="helper">
+            {line.line_kind === "meter_register"
+              ? METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"
+              : line.line_kind === "derived"
+                ? "Обсяг береться з іншої послуги"
+                : "Розрахунок без показників лічильника"}
+          </span>
+        </div>
+        <div className="row-actions">
+          <span className="status-pill">{lineKindLabel(line.line_kind)}</span>
+        </div>
+      </div>
+      <div className="forms-grid compact-grid">
+        <In
+          label="Назва рядка"
+          tip="Назва рядка"
+          help={canEditLineLabels ? "Як цей рядок буде показаний у списках і розрахунку." : "Для електроенергії назва рядка формується автоматично."}
+          value={line.label}
+          onChange={(e) => updateLine(index, { label: e.target.value })}
+          disabled={!canEditLineLabels}
+        />
+        <In label="Ціна" tip="Ціна" type="number" help="Вартість одиниці для цього рядка." value={line.price_per_unit} onChange={(e) => updateLine(index, { price_per_unit: e.target.value })} />
+        <In
+          label="Одиниця тарифу"
+          tip="Одиниця тарифу"
+          help="Одиниця береться з довідника послуг."
+          value={line.unit_name}
+          onChange={(e) => updateLine(index, { unit_name: e.target.value })}
+          disabled
+        />
+        <In
+          label="Діє з"
+          tip="Діє з"
+          type="date"
+          value={line.effective_from}
+          onChange={(e) => updateLine(index, { effective_from: e.target.value })}
+          disabled
+        />
+        {line.line_kind === "meter_register" ? (
+          <>
+            <Se label="Лічильник" tip="Лічильник" help="Фізичний лічильник об'єкта, з якого береться споживання." value={line.meter_id} onChange={(e) => updateLine(index, { meter_id: e.target.value })}>
+              <option value="">Оберіть лічильник</option>
+              {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</option>)}
+            </Se>
+            <In
+              label="Початковий показник"
+              tip="Початковий показник"
+              type="number"
+              min="0"
+              step="0.001"
+              help="Стартове значення для цього рядка послуги. Воно використовується як база до першого місячного показника."
+              value={line.initial_reading}
+              onChange={(e) => updateLine(index, { initial_reading: e.target.value })}
+            />
+          </>
+        ) : null}
+        {line.line_kind === "derived" ? (
+          <Se label="Брати обсяг з" tip="Брати обсяг з" help="Оберіть рядок-джерело для похідної послуги." value={line.derived_from_line_id} onChange={(e) => updateLine(index, { derived_from_line_id: e.target.value })}>
+            <option value="">
+              {requiredDerivedService
+                ? `Спочатку підключіть "${requiredDerivedService.name}"`
+                : "Оберіть послугу-джерело"}
+            </option>
+            {derivedSourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </Se>
+        ) : null}
+        {line.line_kind === "fixed" ? (
+          <Se label="База множення" tip="База множення" help="Фіксована, від площі або від кількості прописаних." value={line.quantity_source} onChange={(e) => updateLine(index, { quantity_source: e.target.value as QuantitySource })}>
+            <option value="fixed_1">{QUANTITY_SOURCE_LABELS.fixed_1}</option>
+            <option value="registered_residents">{QUANTITY_SOURCE_LABELS.registered_residents}</option>
+            <option value="area_m2">{QUANTITY_SOURCE_LABELS.area_m2}</option>
+          </Se>
+        ) : (
+          <In
+            label="База множення"
+            tip="База множення"
+            value={QUANTITY_SOURCE_LABELS[line.quantity_source]}
+            onChange={() => {}}
+            disabled
+          />
+        )}
+        <In
+          label="Множник"
+          tip="Множник"
+          type="number"
+          help="Для більшості послуг лишається 1."
+          value={line.quantity_multiplier}
+          onChange={(e) => updateLine(index, { quantity_multiplier: e.target.value })}
+          disabled={line.line_kind !== "fixed"}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className="property-sections">
@@ -844,106 +954,35 @@ export function ObjectServicesTab({
                 </div>
               </div>
               <div className="service-line-editor-list">
-                {form.charge_lines.map((line, index) => (
-                  <div key={`${line.label}-${index}`} className={`service-line-editor ${lineToneClass(line)}`}>
-                    <div className="service-line-editor-toolbar">
-                      <div className="service-line-title">
-                        <strong>{line.label || `Рядок ${index + 1}`}</strong>
-                        <span className="helper">
-                          {line.line_kind === "meter_register"
-                            ? METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"
-                            : line.line_kind === "derived"
-                              ? "Обсяг береться з іншої послуги"
-                              : "Розрахунок без показників лічильника"}
-                        </span>
-                      </div>
-                      <div className="row-actions">
-                        <span className="status-pill">{lineKindLabel(line.line_kind)}</span>
-                      </div>
-                    </div>
-                    <div className="forms-grid compact-grid">
-                      <In
-                        label="Назва рядка"
-                        tip="Назва рядка"
-                        help={canEditLineLabels ? "Як цей рядок буде показаний у списках і розрахунку." : "Для електроенергії назва рядка формується автоматично."}
-                        value={line.label}
-                        onChange={(e) => updateLine(index, { label: e.target.value })}
-                        disabled={!canEditLineLabels}
-                      />
-                      <In label="Ціна" tip="Ціна" type="number" help="Вартість одиниці для цього рядка." value={line.price_per_unit} onChange={(e) => updateLine(index, { price_per_unit: e.target.value })} />
-                      <In
-                        label="Одиниця тарифу"
-                        tip="Одиниця тарифу"
-                        help="Одиниця береться з довідника послуг."
-                        value={line.unit_name}
-                        onChange={(e) => updateLine(index, { unit_name: e.target.value })}
-                        disabled
-                      />
-                      <In
-                        label="Діє з"
-                        tip="Діє з"
-                        type="date"
-                        value={line.effective_from}
-                        onChange={(e) => updateLine(index, { effective_from: e.target.value })}
-                        disabled
-                      />
-                      {line.line_kind === "meter_register" ? (
-                        <>
-                          <Se label="Лічильник" tip="Лічильник" help="Фізичний лічильник об'єкта, з якого береться споживання." value={line.meter_id} onChange={(e) => updateLine(index, { meter_id: e.target.value })}>
-                            <option value="">Оберіть лічильник</option>
-                            {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</option>)}
-                          </Se>
-                          <In
-                            label="Початковий показник"
-                            tip="Початковий показник"
-                            type="number"
-                            min="0"
-                            step="0.001"
-                            help="Стартове значення для цього рядка послуги. Воно використовується як база до першого місячного показника."
-                            value={line.initial_reading}
-                            onChange={(e) => updateLine(index, { initial_reading: e.target.value })}
-                          />
-                        </>
-                      ) : null}
-                      {line.line_kind === "derived" ? (
-                        <Se label="Брати обсяг з" tip="Брати обсяг з" help="Оберіть рядок-джерело для похідної послуги." value={line.derived_from_line_id} onChange={(e) => updateLine(index, { derived_from_line_id: e.target.value })}>
-                          <option value="">
-                            {requiredDerivedService
-                              ? `Спочатку підключіть "${requiredDerivedService.name}"`
-                              : "Оберіть послугу-джерело"}
-                          </option>
-                          {derivedSourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                        </Se>
-                      ) : null}
-                      {line.line_kind === "fixed" ? (
-                        <Se label="База множення" tip="База множення" help="Фіксована, від площі або від кількості прописаних." value={line.quantity_source} onChange={(e) => updateLine(index, { quantity_source: e.target.value as QuantitySource })}>
-                          <option value="fixed_1">{QUANTITY_SOURCE_LABELS.fixed_1}</option>
-                          <option value="registered_residents">{QUANTITY_SOURCE_LABELS.registered_residents}</option>
-                          <option value="area_m2">{QUANTITY_SOURCE_LABELS.area_m2}</option>
-                        </Se>
-                      ) : (
-                        <In
-                          label="База множення"
-                          tip="База множення"
-                          value={QUANTITY_SOURCE_LABELS[line.quantity_source]}
-                          onChange={() => {}}
-                          disabled
-                        />
-                      )}
-                      <In
-                        label="Множник"
-                        tip="Множник"
-                        type="number"
-                        help="Для більшості послуг лишається 1."
-                        value={line.quantity_multiplier}
-                        onChange={(e) => updateLine(index, { quantity_multiplier: e.target.value })}
-                        disabled={line.line_kind !== "fixed"}
-                      />
-                    </div>
-                  </div>
-                ))}
+                {activeLineEntries.length === 0 ? (
+                  <p className="helper">Активних рядків немає.</p>
+                ) : (
+                  activeLineEntries.map(({ line, index }) => renderChargeLineEditor(line, index))
+                )}
               </div>
             </div>
+
+            {historicalLineEntries.length > 0 ? (
+              <div className="subcard">
+                <div className="header-tools">
+                  <div>
+                    <h4>Історія тарифів ({historicalLineEntries.length})</h4>
+                    <p className="helper">
+                      Рядки з датою дії в минулому. Вони більше не впливають на поточний розрахунок, але
+                      лишаються для коректного перерахунку старих місяців.
+                    </p>
+                  </div>
+                  <button type="button" className="secondary" onClick={() => setShowLineHistory((current) => !current)}>
+                    {showLineHistory ? "Сховати історію" : "Показати історію"}
+                  </button>
+                </div>
+                {showLineHistory ? (
+                  <div className="service-line-editor-list">
+                    {historicalLineEntries.map(({ line, index }) => renderChargeLineEditor(line, index))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="automation-window-preview">
               <strong>Примітка:</strong> якщо послуга рахується за лічильником, початковий показник задається саме тут, у рядку розрахунку послуги. У вкладці Розрахунок надалі вносяться вже поточні місячні показники.

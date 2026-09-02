@@ -694,6 +694,9 @@ export function DashboardContent({
               </small>
             </div>
           </div>
+          <p className="helper dashboard-live-strip-label">
+            Стан на сьогодні (може відрізнятися від показників вище, якщо обраний місяць — не поточний):
+          </p>
           <div className="summary-grid dashboard-live-strip">
             <div className="metric">
               <div className="label">Поточний баланс на сьогодні</div>
@@ -987,7 +990,7 @@ export function DashboardContent({
               </div>
               <div className="subcard">
                 <h4>Лічильники</h4>
-                <p className="helper">Тут створюються самі пристрої. Тарифи і стартові показники задаються пізніше у вкладці `Тарифи`.</p>
+                <p className="helper">Тут створюються самі пристрої. Тарифи і стартові показники задаються пізніше у вкладці `Послуги об&apos;єкта`.</p>
                 <div className="meter-list">
                   {meters.length === 0 && <span className="helper">Лічильників ще немає.</span>}
                   {meters.map((meter) => (

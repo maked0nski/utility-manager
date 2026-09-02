@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { In, Se, Ta } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
+import { unitLabel } from "@/shared/utils/format";
 import type {
   ApartmentServiceConnectionItem,
   ChargeLineKind,
@@ -522,7 +523,7 @@ export function ObjectServicesTab({
                 <div className="service-connection-head">
                   <div>
                     <strong>{service?.name || `Послуга #${connection.service_catalog_id}`}</strong>
-                    <div className="helper">{CALCULATION_KIND_LABELS[service?.calculation_kind || "fixed"]} • {service?.unit_name || "—"}</div>
+                    <div className="helper">{CALCULATION_KIND_LABELS[service?.calculation_kind || "fixed"]} • {service?.unit_name ? unitLabel(service.unit_name) : "—"}</div>
                   </div>
                   <span className={`status-pill ${connection.status === "active" ? "ok" : "draft"}`}>{connectionStatusLabel(connection.status)}</span>
                 </div>
@@ -547,7 +548,7 @@ export function ObjectServicesTab({
                         <div key={line.id} className={`service-line-chip ${lineToneClass(line)}`}>
                           <strong>{line.label}</strong>
                           {line.line_kind === "meter_register" ? <span>{METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"}</span> : null}
-                          <span>Ціна: {line.price_per_unit} / {line.unit_name}</span>
+                          <span>Ціна: {line.price_per_unit} / {unitLabel(line.unit_name)}</span>
                           <span>Логіка: {lineKindLabel(line.line_kind)}</span>
                           {meter ? <span>Лічильник: {(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</span> : null}
                           {line.line_kind === "meter_register" ? (
@@ -612,7 +613,7 @@ export function ObjectServicesTab({
                 <h4>Логіка послуги</h4>
                 <div className="service-connection-meta">
                   <span>Тип: <strong>{CALCULATION_KIND_LABELS[selectedService.calculation_kind]}</strong></span>
-                  <span>Одиниця: <strong>{selectedService.unit_name}</strong></span>
+                  <span>Одиниця: <strong>{unitLabel(selectedService.unit_name)}</strong></span>
                   <span>Лічильник: <strong>{selectedService.requires_meter ? selectedService.allowed_meter_utility_type ? UTILITY_TYPE_LABELS[selectedService.allowed_meter_utility_type] : "так" : "не потрібен"}</strong></span>
                   <span>Рекомендований ресурс постачальника: <strong>{selectedService.default_provider_utility_type ? UTILITY_TYPE_LABELS[selectedService.default_provider_utility_type] : "не задано"}</strong></span>
                 </div>

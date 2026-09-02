@@ -19,6 +19,7 @@ import { AutomationsTab } from "@/features/tariffs/components/AutomationsTab";
 import { OwnerCostsTab } from "@/features/expenses/components/OwnerCostsTab";
 import { ReportTab } from "@/features/report/components/ReportTab";
 import { ObjectServicesTab } from "@/features/services/components/ObjectServicesTab";
+import type { ElectricityPlanForm } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import {
   buildApartmentFormFromGooglePlace,
   buildFullPropertyAddress,
@@ -160,6 +161,10 @@ export function DashboardContent({
   createServiceConnection,
   updateServiceConnection,
   deleteServiceConnection,
+  electricityPlanForm,
+  setElectricityPlanForm,
+  electricityMeters,
+  saveElectricityPlan,
   own,
   setOwn,
   addOwner,
@@ -405,6 +410,10 @@ export function DashboardContent({
     },
   ) => Promise<void>;
   deleteServiceConnection: (connectionId: number) => Promise<void>;
+  electricityPlanForm: ElectricityPlanForm;
+  setElectricityPlanForm: Dispatch<SetStateAction<ElectricityPlanForm>>;
+  electricityMeters: MeterItem[];
+  saveElectricityPlan: () => Promise<void>;
   own: any;
   setOwn: (v: any) => void;
   addOwner: () => Promise<void>;
@@ -774,6 +783,10 @@ export function DashboardContent({
               onCreateConnection={createServiceConnection}
               onUpdateConnection={updateServiceConnection}
               onDeleteConnection={deleteServiceConnection}
+              electricityPlanForm={electricityPlanForm}
+              setElectricityPlanForm={setElectricityPlanForm}
+              electricityMeters={electricityMeters}
+              saveElectricityPlan={saveElectricityPlan}
             />
           )}
 

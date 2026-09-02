@@ -18,7 +18,6 @@ import { TenantTab } from "@/features/tenants/components/TenantTab";
 import { AutomationsTab } from "@/features/tariffs/components/AutomationsTab";
 import { OwnerCostsTab } from "@/features/expenses/components/OwnerCostsTab";
 import { ReportTab } from "@/features/report/components/ReportTab";
-import { ProvidersTab } from "@/features/providers/components/ProvidersTab";
 import { ObjectServicesTab } from "@/features/services/components/ObjectServicesTab";
 import {
   buildApartmentFormFromGooglePlace,
@@ -36,12 +35,11 @@ import type {
   AutomationTemplateItem,
   ApartmentServiceConnectionItem,
   ProviderItem,
-  ServiceCalculationKind,
   ServiceCatalogItem,
   UtilityType,
 } from "@/shared/api/types";
 
-type TabKey = "calc" | "payments" | "tenant" | "tariffs" | "automations" | "owner" | "report" | "property" | "settings";
+type TabKey = "calc" | "payments" | "tenant" | "tariffs" | "automations" | "owner" | "report" | "property";
 const UTILITY_TYPE_LABELS: Record<MeterItem["utility_type"], string> = {
   electricity: "Електроенергія",
   water: "Вода",
@@ -162,15 +160,6 @@ export function DashboardContent({
   createServiceConnection,
   updateServiceConnection,
   deleteServiceConnection,
-  createProvider,
-  updateProvider,
-  deleteProvider,
-  createMeterType,
-  updateMeterType,
-  deleteMeterType,
-  createServiceCatalogItem,
-  updateServiceCatalogItem,
-  deleteServiceCatalogItem,
   own,
   setOwn,
   addOwner,
@@ -416,68 +405,6 @@ export function DashboardContent({
     },
   ) => Promise<void>;
   deleteServiceConnection: (connectionId: number) => Promise<void>;
-  createProvider: (payload: {
-    name_full: string;
-    utility_type: UtilityType;
-    adapter_code: string;
-    is_active: boolean;
-    note: string;
-  }) => Promise<void>;
-  updateProvider: (
-    providerId: number,
-    payload: {
-      name_full: string;
-      utility_type: UtilityType;
-      adapter_code: string;
-      is_active: boolean;
-      note: string;
-    },
-  ) => Promise<void>;
-  deleteProvider: (providerId: number) => Promise<void>;
-  createMeterType: (payload: {
-    name: string;
-    utility_type: UtilityType;
-    sort_order: number;
-    is_active: boolean;
-  }) => Promise<void>;
-  updateMeterType: (
-    meterTypeId: number,
-    payload: {
-      name: string;
-      utility_type: UtilityType;
-      sort_order: number;
-      is_active: boolean;
-    },
-  ) => Promise<void>;
-  deleteMeterType: (meterTypeId: number) => Promise<void>;
-  createServiceCatalogItem: (payload: {
-    code: string;
-    name: string;
-    calculation_kind: ServiceCalculationKind;
-    unit_name: string;
-    requires_meter: boolean;
-    allowed_meter_utility_type: UtilityType | null;
-    default_provider_utility_type: UtilityType | null;
-    derived_from_service_id: number | null;
-    display_order: number;
-    is_active: boolean;
-  }) => Promise<void>;
-  updateServiceCatalogItem: (
-    serviceCatalogId: number,
-    payload: {
-      code: string;
-      name: string;
-      calculation_kind: ServiceCalculationKind;
-      unit_name: string;
-      requires_meter: boolean;
-      allowed_meter_utility_type: UtilityType | null;
-      default_provider_utility_type: UtilityType | null;
-      derived_from_service_id: number | null;
-      display_order: number;
-      is_active: boolean;
-    },
-  ) => Promise<void>;
-  deleteServiceCatalogItem: (serviceCatalogId: number) => Promise<void>;
   own: any;
   setOwn: (v: any) => void;
   addOwner: () => Promise<void>;
@@ -750,12 +677,6 @@ export function DashboardContent({
               Автоматизації
             </button>
             <button
-              className={`tab ${tab === "settings" ? "active" : ""}`}
-              onClick={() => setTab("settings")}
-            >
-              Налаштування
-            </button>
-            <button
               className={`tab ${tab === "report" ? "active" : ""}`}
               onClick={() => setTab("report")}
             >
@@ -895,23 +816,6 @@ export function DashboardContent({
                 onOpenTariffs={() => setTab("tariffs")}
               />
           )}
-          {tab === "settings" && (
-            <ProvidersTab
-              providers={providers}
-              meterTypes={meterTypes}
-              serviceCatalog={serviceCatalog}
-              createProvider={createProvider}
-              updateProvider={updateProvider}
-              deleteProvider={deleteProvider}
-              createMeterType={createMeterType}
-              updateMeterType={updateMeterType}
-              deleteMeterType={deleteMeterType}
-              createServiceCatalogItem={createServiceCatalogItem}
-              updateServiceCatalogItem={updateServiceCatalogItem}
-              deleteServiceCatalogItem={deleteServiceCatalogItem}
-            />
-          )}
-
           {tab === "report" && (
             <ReportTab
               detail={detail}

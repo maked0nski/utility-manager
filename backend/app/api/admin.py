@@ -3885,6 +3885,18 @@ def apply_charge_line_from_period(
         db.refresh(existing)
         return existing
 
+    already_covers_period = (
+        source.price_per_unit == payload.price_per_unit
+        and source.unit_name == payload.unit_name
+        and source.effective_from <= effective_from
+        and (source.effective_to is None or source.effective_to >= effective_from)
+    )
+    if already_covers_period:
+        # Nothing actually changed - the source line already covers this period at this
+        # price, so cloning a new dated row would just be redundant history. This is the
+        # server-side backstop for callers that re-submit the same price every month.
+        return source
+
     if source.effective_from < effective_from and (source.effective_to is None or source.effective_to >= effective_from):
         source.effective_to = effective_from - timedelta(days=1)
 

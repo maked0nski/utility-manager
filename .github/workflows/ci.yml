@@ -95,3 +95,17 @@ jobs:
             ghcr.io/${{ github.repository }}-frontend:${{ github.sha }}
           build-args: |
             VITE_GOOGLE_MAPS_API_KEY=${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+
+  trigger-deploy:
+    needs: [publish-api, publish-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask Watchtower to update now
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer ${{ secrets.WATCHTOWER_HTTP_API_TOKEN }}" \
+            https://deploy.yermakov.pp.ua/v1/update
+        # Watchtower already polls um_api/um_frontend every 5 minutes on its own,
+        # so a failure here (e.g. the endpoint being briefly unreachable) is not
+        # fatal to the deploy - it just falls back to that periodic check.
+        continue-on-error: true

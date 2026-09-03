@@ -1,0 +1,58 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: um_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - um_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: ghcr.io/maked0nski/utility-manager-api:latest
+    container_name: um_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/storage:/app/storage
+    command: >
+      sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  frontend:
+    image: ghcr.io/maked0nski/utility-manager-frontend:latest
+    container_name: um_frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - default
+      - web_traffic
+
+  adminer:
+    image: adminer:latest
+    container_name: um_adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    networks:
+      - default
+      - web_traffic
+
+volumes:
+  um_mysql_data:
+
+networks:
+  web_traffic:
+    external: true

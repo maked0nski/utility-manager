@@ -176,13 +176,6 @@ const submitStateTone = (row: AutomationItem): StatusTone => {
   return "draft";
 };
 
-const maskLogin = (value?: string | null) => {
-  const raw = (value || "").trim();
-  if (!raw) return "—";
-  if (raw.length <= 4) return `${raw[0] || "*"}***`;
-  return `${raw.slice(0, 3)}...${raw.slice(-2)}`;
-};
-
 const apartmentLabel = (row: Pick<AutomationItem, "apartment_address" | "apartment_code">) =>
   (row.apartment_address || "").trim() || (row.apartment_code || "").trim() || "—";
 
@@ -1082,10 +1075,41 @@ export function AutomationsTab({
 
             <div className="automation-source-box">
               <div className="field-label">Джерело даних</div>
-              <div>Логін: <strong>{maskLogin(editingRow.cabinet_login)}</strong></div>
-              <div>URL: <strong>{editingRow.cabinet_url || "—"}</strong></div>
-              <div>Особовий рахунок: <strong>{editingRow.personal_account || "—"}</strong></div>
-              <div className="helper">Параметри послуги та її нарахувань редагуються у вкладці Послуги об'єкта.</div>
+              <div className="field">
+                <label className="field-label">Особовий рахунок</label>
+                <input
+                  value={ensureDraft(editingRow).personal_account}
+                  onChange={(e) => updateDraft(editingRow, { personal_account: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">URL кабінету</label>
+                <input
+                  value={ensureDraft(editingRow).cabinet_url}
+                  onChange={(e) => updateDraft(editingRow, { cabinet_url: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">Логін</label>
+                <input
+                  value={ensureDraft(editingRow).cabinet_login}
+                  onChange={(e) => updateDraft(editingRow, { cabinet_login: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">Пароль</label>
+                <div className="row-actions">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={ensureDraft(editingRow).cabinet_password}
+                    onChange={(e) => updateDraft(editingRow, { cabinet_password: e.target.value })}
+                  />
+                  <button type="button" className="secondary" onClick={() => setShowPassword((v) => !v)}>
+                    {showPassword ? "Сховати" : "Показати"}
+                  </button>
+                </div>
+              </div>
+              <div className="helper">Параметри послуги (тариф, лічильник, тип нарахування) редагуються у вкладці Послуги об'єкта.</div>
               <button className="secondary" onClick={() => { setEditingKey(null); onOpenTariffs?.(); }}>Відкрити послуги об'єкта</button>
             </div>
 

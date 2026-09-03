@@ -698,6 +698,16 @@ def _upsert_service_charge_line_price(
     return clone, old_value
 
 
+def _apply_cabinet_tariff_observation(
+    current_line: ConnectionChargeLine,
+    *,
+    candidate_value: Decimal,
+    checked_at: datetime,
+) -> None:
+    current_line.cabinet_price_per_unit = candidate_value.quantize(Decimal("0.0001"))
+    current_line.cabinet_checked_at = checked_at
+
+
 def _build_automation_bindings(
     db: Session,
     *,

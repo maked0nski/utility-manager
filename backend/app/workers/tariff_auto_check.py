@@ -599,9 +599,11 @@ def _apply_cabinet_tariff_observation(
     *,
     candidate_value: Decimal,
     checked_at: datetime,
+    is_estimated: bool = False,
 ) -> None:
     current_line.cabinet_price_per_unit = candidate_value.quantize(Decimal("0.0001"))
     current_line.cabinet_checked_at = checked_at
+    current_line.cabinet_price_is_estimated = is_estimated
 
 
 def _build_automation_bindings(

@@ -559,6 +559,7 @@ class ConnectionChargeLine(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     cabinet_price_per_unit: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), default=None)
     cabinet_checked_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    cabinet_price_is_estimated: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     connection: Mapped[ApartmentServiceConnection] = relationship(back_populates="charge_lines")

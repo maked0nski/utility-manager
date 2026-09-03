@@ -354,6 +354,14 @@ def _ensure_connection_charge_lines_table(db: Session) -> None:
     if not _has_column(db, "connection_charge_lines", "cabinet_checked_at"):
         db.execute(text("ALTER TABLE connection_charge_lines ADD COLUMN cabinet_checked_at DATETIME NULL"))
         db.commit()
+    if not _has_column(db, "connection_charge_lines", "cabinet_price_is_estimated"):
+        db.execute(
+            text(
+                "ALTER TABLE connection_charge_lines ADD COLUMN cabinet_price_is_estimated "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
+        db.commit()
 
 
 def _ensure_billing_month_snapshots_table(db: Session) -> None:

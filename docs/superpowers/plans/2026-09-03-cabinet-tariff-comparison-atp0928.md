@@ -301,10 +301,20 @@ git commit -m "feat(tariff-worker): add pure helper to record cabinet tariff obs
 
 ## Task 4: Wire the helper into `_run_atp0928`, remove the auto-write
 
-Replaces the "Business rule: if DB total >= cabinet-derived total, keep unchanged" branch (currently at `tariff_auto_check.py:964-990`) with an unconditional cabinet-observation record, and never calls `_upsert_service_charge_line_price` from this worker again.
+Replaces the "Business rule: if DB total >= cabinet-derived total, keep unchanged" branch
+(currently at `tariff_auto_check.py:964-1009`) with an unconditional cabinet-observation record,
+and never calls `_upsert_service_charge_line_price` from this worker again.
+
+> **Note:** this code moved since the plan was first written — an earlier same-session fix
+> (commit `96e19ac`) replaced a hardcoded `residents_multiplier` with `current_line_quantity`
+> (via `line_quantity(...)`, the real billing engine's quantity resolution) when computing
+> `current_total`/`candidate_per_person`, because this apartment's "Вивіз сміття" line is a flat
+> fixed charge, not priced per registered resident. The snippets below reflect the file as it
+> exists now — use `current_line_quantity`, not `residents_multiplier`, and do not reintroduce
+> the old hardcoded multiplier.
 
 **Files:**
-- Modify: `backend/app/workers/tariff_auto_check.py:964-990`
+- Modify: `backend/app/workers/tariff_auto_check.py:964-1009`
 - Modify: `frontend/src/features/tariffs/components/AutomationsTab.tsx:75` (status label)
 
 **Interfaces:**
@@ -312,15 +322,34 @@ Replaces the "Business rule: if DB total >= cabinet-derived total, keep unchange
 
 - [ ] **Step 1: Replace the auto-write branch**
 
-In `backend/app/workers/tariff_auto_check.py`, replace lines 964-990:
+In `backend/app/workers/tariff_auto_check.py`, replace lines 964-1009:
 
 ```python
+            else:
+                current_line_quantity = line_quantity(
+                    apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier)
+                )
+                if current_line_quantity <= 0:
+                    current_line_quantity = Decimal("1")
+                current_per_person = Decimal(current_line.price_per_unit)
+                current_total = (current_per_person * current_line_quantity).quantize(Decimal("0.01"))
+                candidate_total_rounded = _round_up_to_half(candidate_total_raw).quantize(Decimal("0.01"))
+                setting.auto_check_last_value_raw = candidate_total_raw.quantize(Decimal("0.0001"))
+                setting.auto_check_last_value_rounded = candidate_total_rounded
+
+                if public_tariff_per_person is not None and accrued_month_value is not None:
+                    persons_estimate = (accrued_month_value / public_tariff_per_person) if public_tariff_per_person > 0 else Decimal("0")
+                    message_parts.append(
+                        f"Оцінка к-сті прописаних: {persons_estimate.quantize(Decimal('0.01'))}"
+                    )
+                message_parts.append(f"К-сть прописаних: {residents_count}")
+
                 # Business rule: if DB total >= cabinet-derived total, keep unchanged.
                 if current_total >= candidate_total_rounded:
                     message_parts.append(f"Без змін: у БД {current_total} >= {candidate_total_rounded}")
                     setting.auto_check_completed_for_period = True
                 else:
-                    candidate_per_person = (candidate_total_rounded / residents_multiplier).quantize(Decimal("0.0001"))
+                    candidate_per_person = (candidate_total_rounded / current_line_quantity).quantize(Decimal("0.0001"))
                     target_line, _ = _upsert_service_charge_line_price(
                         db,
                         apartment_id=setting.apartment_id,
@@ -347,7 +376,26 @@ In `backend/app/workers/tariff_auto_check.py`, replace lines 964-990:
 with:
 
 ```python
-                candidate_per_person = (candidate_total_rounded / residents_multiplier).quantize(Decimal("0.0001"))
+            else:
+                current_line_quantity = line_quantity(
+                    apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier)
+                )
+                if current_line_quantity <= 0:
+                    current_line_quantity = Decimal("1")
+                current_per_person = Decimal(current_line.price_per_unit)
+                current_total = (current_per_person * current_line_quantity).quantize(Decimal("0.01"))
+                candidate_total_rounded = _round_up_to_half(candidate_total_raw).quantize(Decimal("0.01"))
+                setting.auto_check_last_value_raw = candidate_total_raw.quantize(Decimal("0.0001"))
+                setting.auto_check_last_value_rounded = candidate_total_rounded
+
+                if public_tariff_per_person is not None and accrued_month_value is not None:
+                    persons_estimate = (accrued_month_value / public_tariff_per_person) if public_tariff_per_person > 0 else Decimal("0")
+                    message_parts.append(
+                        f"Оцінка к-сті прописаних: {persons_estimate.quantize(Decimal('0.01'))}"
+                    )
+                message_parts.append(f"К-сть прописаних: {residents_count}")
+
+                candidate_per_person = (candidate_total_rounded / current_line_quantity).quantize(Decimal("0.0001"))
                 _apply_cabinet_tariff_observation(current_line, candidate_value=candidate_per_person, checked_at=now_utc)
                 has_update = True
                 setting.auto_check_completed_for_period = True

@@ -58,6 +58,7 @@ interface CalculationTabProps {
   saveRow: (row: CalculationRow) => Promise<void>;
   recalcMonth: () => Promise<void>;
   confirmMonth: () => Promise<void>;
+  runAutomationCycle: () => Promise<void>;
   reopenMonth: (reason: string) => Promise<void>;
   resetSortDefault: () => void;
   accr: number;
@@ -108,6 +109,7 @@ export function CalculationTab({
   saveRow,
   recalcMonth,
   confirmMonth,
+  runAutomationCycle,
   reopenMonth,
   resetSortDefault,
   accr,
@@ -222,6 +224,7 @@ export function CalculationTab({
   const [reopenModalOpen, setReopenModalOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [reopenSaving, setReopenSaving] = useState(false);
+  const [updatingTariffs, setUpdatingTariffs] = useState(false);
 
   const handleLockAction = async () => {
     if (!detail.calc_locked) {
@@ -442,6 +445,20 @@ export function CalculationTab({
       <div className="row-inline top-gap">
         <div className="row-actions">
           <button onClick={recalcMonth}>Заповнити місяць послугами</button>
+          <button
+            className="secondary"
+            disabled={updatingTariffs}
+            onClick={async () => {
+              setUpdatingTariffs(true);
+              try {
+                await runAutomationCycle();
+              } finally {
+                setUpdatingTariffs(false);
+              }
+            }}
+          >
+            {updatingTariffs ? "Оновлення..." : "Оновити тарифи"}
+          </button>
           <button className="secondary" onClick={() => void openBatchReadingModal()}>
             Внести показники
           </button>

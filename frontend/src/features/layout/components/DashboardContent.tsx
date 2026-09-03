@@ -373,6 +373,7 @@ export function DashboardContent() {
               saveBatchReadings={saveBatchReadings}
               batchReadingSaving={batchReadingSaving}
               cabinetTariffByLineId={cabinetTariffByLineId}
+              runAutomationCycle={runAutomationCycle}
             />
           )}
           {tab === "payments" && (

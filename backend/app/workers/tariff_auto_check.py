@@ -980,33 +980,18 @@ def _run_atp0928(
                     )
                 message_parts.append(f"К-сть прописаних: {residents_count}")
 
-                # Business rule: if DB total >= cabinet-derived total, keep unchanged.
+                candidate_per_person = (candidate_total_rounded / current_line_quantity).quantize(Decimal("0.0001"))
+                _apply_cabinet_tariff_observation(current_line, candidate_value=candidate_per_person, checked_at=now_utc)
+                has_update = True
+                setting.auto_check_completed_for_period = True
                 if current_total >= candidate_total_rounded:
-                    message_parts.append(f"Без змін: у БД {current_total} >= {candidate_total_rounded}")
-                    setting.auto_check_completed_for_period = True
-                else:
-                    candidate_per_person = (candidate_total_rounded / current_line_quantity).quantize(Decimal("0.0001"))
-                    target_line, _ = _upsert_service_charge_line_price(
-                        db,
-                        apartment_id=setting.apartment_id,
-                        service_name=setting.service_name,
-                        period_start=period_start,
-                        new_value=candidate_per_person,
-                        connection_id=setting.connection_id,
-                        service_catalog_id=setting.service_catalog_id,
+                    message_parts.append(
+                        f"Тариф з кабінету: {candidate_per_person} (мій {current_per_person.quantize(Decimal('0.0001'))} — без змін)"
                     )
-                    if target_line is None:
-                        has_error = True
-                        message_parts.append("Не вдалося оновити рядок тарифу")
-                    else:
-                        db.flush()
-                        _recalc_from_period(db, setting.apartment_id, local_now.year, local_now.month)
-                        has_update = True
-                        message_parts.append(
-                            f"Тариф оновлено: {current_per_person.quantize(Decimal('0.0001'))} -> {candidate_per_person}"
-                        )
-                        setting.auto_check_last_updated_at = now_utc
-                        setting.auto_check_completed_for_period = True
+                else:
+                    message_parts.append(
+                        f"Тариф з кабінету: {candidate_per_person} (мій {current_per_person.quantize(Decimal('0.0001'))} — перевірте вручну)"
+                    )
 
     setting.auto_check_last_checked_at = now_utc
     setting.last_tariff_check_at = now_utc

@@ -72,7 +72,7 @@ const buildTemplateCode = (name: string, providerName?: string | null) => {
 const rowKey = (row: AutomationItem) => `${row.automation_id || `${row.apartment_id}:${row.service_name}`}`;
 
 const statusView = (status?: string | null): { label: string; tone: StatusTone } => {
-  if (status === "updated") return { label: "Оновлено", tone: "ok" };
+  if (status === "updated") return { label: "Тариф з кабінету отримано", tone: "ok" };
   if (status === "no_change") return { label: "Без змін", tone: "ok" };
   if (status === "waiting") return { label: "Очікування", tone: "draft" };
   if (status === "error") return { label: "Помилка", tone: "error" };

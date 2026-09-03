@@ -15,7 +15,7 @@ import httpx
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app.api.admin import _recalc_from_period
+from app.api.admin._shared import _recalc_from_period
 from app.core.security import decrypt_text
 from app.models import (
     Apartment,

@@ -26,6 +26,7 @@ import { useEquipmentActions } from "@/features/properties/hooks/use-equipment-a
 import { PropertyDrawer } from "@/features/properties/components/PropertyDrawer";
 import { ReferencesPage } from "@/features/references/pages/ReferencesPage";
 import { DashboardContent } from "@/features/layout/components/DashboardContent";
+import { DashboardContext } from "@/features/layout/context/dashboard-context";
 import { AppModals } from "@/features/layout/components/AppModals";
 import { ProfileSettingsModal } from "@/features/layout/components/ProfileSettingsModal";
 import { useAdminUserActions } from "@/features/auth/hooks/use-admin-user-actions";
@@ -1201,135 +1202,139 @@ export function AdminApp() {
                 updateTenantById={updateTenantById}
                 deleteTenantById={deleteTenantById}
               />
-              <DashboardContent
-                apartmentsQuery={apartmentsQuery}
-                detailBundleQuery={detailBundleQuery}
-                sel={sel}
-                detail={detail}
-                shiftPeriod={shiftPeriod}
-                onPickPeriod={(year, month) => {
-                  if (isPeriodAfterMaxAllowed(year, month)) return;
-                  setPeriod({ year, month });
+              <DashboardContext.Provider
+                value={{
+                  apartmentsQuery,
+                  detailBundleQuery,
+                  sel,
+                  detail,
+                  shiftPeriod,
+                  onPickPeriod: (year, month) => {
+                    if (isPeriodAfterMaxAllowed(year, month)) return;
+                    setPeriod({ year, month });
+                  },
+                  maxPeriodInput,
+                  periodLabel,
+                  p,
+                  money,
+                  tab,
+                  setTab,
+                  dt,
+                  payments,
+                  prepareBillingStatement,
+                  sendBillingStatement,
+                  toggleSort,
+                  sortIcon,
+                  sortedRows,
+                  editSrv,
+                  editRef,
+                  asInt,
+                  start,
+                  setEditSrv,
+                  setDraft,
+                  draft,
+                  changed,
+                  saveRow,
+                  recalcMonth,
+                  confirmMonth,
+                  reopenMonth,
+                  resetSortDefault,
+                  accr,
+                  history,
+                  openBatchReadingModal,
+                  batchReadingMeterOptions,
+                  batchReadingModalOpen,
+                  closeBatchReadingModal: () => setBatchReadingModalOpen(false),
+                  batchReadingMetas,
+                  batchReadingDraft,
+                  setBatchReadingDraft,
+                  saveBatchReadings,
+                  batchReadingSaving,
+                  newTenant,
+                  setNewTenant,
+                  createTenantAndAssign,
+                  tenant,
+                  setTenant,
+                  assignExisting,
+                  setAssignExisting,
+                  tenants,
+                  assignTenant,
+                  tenancies,
+                  tenancyEndDate,
+                  setTenancyEndDate,
+                  saveTenant,
+                  endTenancy,
+                  createPayment,
+                  updatePayment,
+                  deletePayment,
+                  own,
+                  setOwn,
+                  addOwner,
+                  mnt,
+                  setMnt,
+                  addMaint,
+                  oc,
+                  mr,
+                  openOc,
+                  openMr,
+                  saveAp,
+                  delAp,
+                  ap,
+                  setAp,
+                  meters,
+                  replacingMeterId,
+                  replacementForm,
+                  setReplacementForm,
+                  startReplaceMeter,
+                  submitReplacement,
+                  resetReplacementForm,
+                  equipment,
+                  equipmentForm,
+                  setEquipmentForm,
+                  editingEquipmentId,
+                  submitEquipment,
+                  startEditEquipment,
+                  askDeleteEquipment,
+                  resetEquipmentForm,
+                  automations: automationsQuery.data || [],
+                  automationTemplates: automationTemplatesQuery.data || [],
+                  automationsLoading: automationsQuery.isLoading || automationsQuery.isFetching,
+                  saveAutomation,
+                  runAutomation,
+                  createAutomationTemplate,
+                  updateAutomationTemplate,
+                  deleteAutomationTemplate,
+                  connectTemplateToApartment,
+                  disconnectTemplateFromApartment,
+                  fetchAutomationLogs,
+                  runAutomationCycle,
+                  previewAutomationCycle,
+                  automationCycleRuns: automationCycleRunsQuery.data || [],
+                  fetchAutomationCycleRunDetail,
+                  selectedApartmentId: sel?.apartment_id || null,
+                  providers: providersQuery.data || [],
+                  meterTypes: meterTypesQuery.data || [],
+                  serviceCatalog: serviceCatalogQuery.data || [],
+                  serviceConnections: serviceConnectionsQuery.data || [],
+                  serviceConnectionsLoading: serviceConnectionsQuery.isLoading || serviceConnectionsQuery.isFetching,
+                  createServiceConnection,
+                  updateServiceConnection,
+                  deleteServiceConnection,
+                  electricityPlanForm,
+                  setElectricityPlanForm,
+                  electricityMeters,
+                  saveElectricityPlan,
+                  meterForm,
+                  setMeterForm,
+                  editingMeterId,
+                  submitMeter,
+                  startEditMeter,
+                  askDeleteMeter,
+                  resetMeterForm,
                 }}
-                maxPeriodInput={maxPeriodInput}
-                periodLabel={periodLabel}
-                p={p}
-                money={money}
-                tab={tab}
-                setTab={setTab}
-                dt={dt}
-                payments={payments}
-                prepareBillingStatement={prepareBillingStatement}
-                sendBillingStatement={sendBillingStatement}
-                toggleSort={toggleSort}
-                sortIcon={sortIcon}
-                sortedRows={sortedRows}
-                editSrv={editSrv}
-                editRef={editRef}
-                asInt={asInt}
-                start={start}
-                setEditSrv={setEditSrv}
-                setDraft={setDraft}
-                draft={draft}
-                changed={changed}
-                saveRow={saveRow}
-                recalcMonth={recalcMonth}
-                confirmMonth={confirmMonth}
-                reopenMonth={reopenMonth}
-                resetSortDefault={resetSortDefault}
-                accr={accr}
-                history={history}
-                openBatchReadingModal={openBatchReadingModal}
-                batchReadingMeterOptions={batchReadingMeterOptions}
-                batchReadingModalOpen={batchReadingModalOpen}
-                closeBatchReadingModal={() => setBatchReadingModalOpen(false)}
-                batchReadingMetas={batchReadingMetas}
-                batchReadingDraft={batchReadingDraft}
-                setBatchReadingDraft={setBatchReadingDraft}
-                saveBatchReadings={saveBatchReadings}
-                batchReadingSaving={batchReadingSaving}
-                newTenant={newTenant}
-                setNewTenant={setNewTenant}
-                createTenantAndAssign={createTenantAndAssign}
-                tenant={tenant}
-                setTenant={setTenant}
-                assignExisting={assignExisting}
-                setAssignExisting={setAssignExisting}
-                tenants={tenants}
-                assignTenant={assignTenant}
-                tenancies={tenancies}
-                tenancyEndDate={tenancyEndDate}
-                setTenancyEndDate={setTenancyEndDate}
-                saveTenant={saveTenant}
-                endTenancy={endTenancy}
-                createPayment={createPayment}
-                updatePayment={updatePayment}
-                deletePayment={deletePayment}
-                own={own}
-                setOwn={setOwn}
-                addOwner={addOwner}
-                mnt={mnt}
-                setMnt={setMnt}
-                addMaint={addMaint}
-                oc={oc}
-                mr={mr}
-                openOc={openOc}
-                openMr={openMr}
-                saveAp={saveAp}
-                delAp={delAp}
-                ap={ap}
-                setAp={setAp}
-                meters={meters}
-                replacingMeterId={replacingMeterId}
-                replacementForm={replacementForm}
-                setReplacementForm={setReplacementForm}
-                startReplaceMeter={startReplaceMeter}
-                submitReplacement={submitReplacement}
-                resetReplacementForm={resetReplacementForm}
-                equipment={equipment}
-                equipmentForm={equipmentForm}
-                setEquipmentForm={setEquipmentForm}
-                editingEquipmentId={editingEquipmentId}
-                submitEquipment={submitEquipment}
-                startEditEquipment={startEditEquipment}
-                askDeleteEquipment={askDeleteEquipment}
-                resetEquipmentForm={resetEquipmentForm}
-                automations={automationsQuery.data || []}
-                automationTemplates={automationTemplatesQuery.data || []}
-                automationsLoading={automationsQuery.isLoading || automationsQuery.isFetching}
-                saveAutomation={saveAutomation}
-                runAutomation={runAutomation}
-                createAutomationTemplate={createAutomationTemplate}
-                updateAutomationTemplate={updateAutomationTemplate}
-                deleteAutomationTemplate={deleteAutomationTemplate}
-                connectTemplateToApartment={connectTemplateToApartment}
-                disconnectTemplateFromApartment={disconnectTemplateFromApartment}
-                fetchAutomationLogs={fetchAutomationLogs}
-                runAutomationCycle={runAutomationCycle}
-                previewAutomationCycle={previewAutomationCycle}
-                automationCycleRuns={automationCycleRunsQuery.data || []}
-                fetchAutomationCycleRunDetail={fetchAutomationCycleRunDetail}
-                selectedApartmentId={sel?.apartment_id || null}
-                providers={providersQuery.data || []}
-                meterTypes={meterTypesQuery.data || []}
-                serviceCatalog={serviceCatalogQuery.data || []}
-                serviceConnections={serviceConnectionsQuery.data || []}
-                serviceConnectionsLoading={serviceConnectionsQuery.isLoading || serviceConnectionsQuery.isFetching}
-                createServiceConnection={createServiceConnection}
-                updateServiceConnection={updateServiceConnection}
-                deleteServiceConnection={deleteServiceConnection}
-                electricityPlanForm={electricityPlanForm}
-                setElectricityPlanForm={setElectricityPlanForm}
-                electricityMeters={electricityMeters}
-                saveElectricityPlan={saveElectricityPlan}
-                meterForm={meterForm}
-                setMeterForm={setMeterForm}
-                editingMeterId={editingMeterId}
-                submitMeter={submitMeter}
-                startEditMeter={startEditMeter}
-                askDeleteMeter={askDeleteMeter}
-                resetMeterForm={resetMeterForm}
-              />
+              >
+                <DashboardContent />
+              </DashboardContext.Provider>
             </>
           }
         />

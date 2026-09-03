@@ -348,6 +348,12 @@ def _ensure_connection_charge_lines_table(db: Session) -> None:
     if not _has_column(db, "connection_charge_lines", "initial_reading"):
         db.execute(text("ALTER TABLE connection_charge_lines ADD COLUMN initial_reading NUMERIC(12, 3) NULL"))
         db.commit()
+    if not _has_column(db, "connection_charge_lines", "cabinet_price_per_unit"):
+        db.execute(text("ALTER TABLE connection_charge_lines ADD COLUMN cabinet_price_per_unit NUMERIC(12, 4) NULL"))
+        db.commit()
+    if not _has_column(db, "connection_charge_lines", "cabinet_checked_at"):
+        db.execute(text("ALTER TABLE connection_charge_lines ADD COLUMN cabinet_checked_at DATETIME NULL"))
+        db.commit()
 
 
 def _ensure_billing_month_snapshots_table(db: Session) -> None:

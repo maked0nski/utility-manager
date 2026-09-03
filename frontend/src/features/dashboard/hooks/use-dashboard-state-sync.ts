@@ -68,6 +68,10 @@ export function useDashboardStateSync({
       entrance: d.entrance || "",
       floor: d.floor || "",
       room_count: d.room_count !== null && d.room_count !== undefined ? String(d.room_count) : "",
+      cabinet_markup_percent:
+        d.cabinet_markup_percent !== null && d.cabinet_markup_percent !== undefined
+          ? String(d.cabinet_markup_percent)
+          : "",
       latitude: d.latitude !== null && d.latitude !== undefined ? String(d.latitude) : "",
       longitude: d.longitude !== null && d.longitude !== undefined ? String(d.longitude) : "",
       google_maps_url: d.google_maps_url || "",

@@ -20,6 +20,7 @@ function apartmentPayload(ap: ApartmentProfileForm) {
     entrance: ap.entrance || null,
     floor: ap.floor || null,
     room_count: ap.room_count !== "" ? Number(ap.room_count) : null,
+    cabinet_markup_percent: ap.cabinet_markup_percent !== "" ? Number(ap.cabinet_markup_percent) : null,
     latitude: ap.latitude !== "" ? Number(ap.latitude) : null,
     longitude: ap.longitude !== "" ? Number(ap.longitude) : null,
     location_note: ap.location_note || null,

@@ -343,6 +343,7 @@ export interface ApartmentProfileForm {
   entrance: string;
   floor: string;
   room_count: string;
+  cabinet_markup_percent: string;
   latitude: string;
   longitude: string;
   google_maps_url: string;

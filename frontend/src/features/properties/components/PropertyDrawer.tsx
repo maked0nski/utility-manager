@@ -190,6 +190,7 @@ export function PropertyDrawer({
       entrance: "",
       floor: "",
       room_count: "",
+      cabinet_markup_percent: "",
       latitude: "",
       longitude: "",
       google_maps_url: "",
@@ -390,6 +391,17 @@ export function PropertyDrawer({
               step="1"
               value={ap.room_count}
               onChange={(e) => setAp((s) => ({ ...s, room_count: e.target.value }))}
+            />
+            <In
+              label="Націнка над тарифом з кабінету, %"
+              tip="Мінімальний відсоток, на який моя ціна має перевищувати тариф з кабінету постачальника"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="10"
+              value={ap.cabinet_markup_percent}
+              onChange={(e) => setAp((s) => ({ ...s, cabinet_markup_percent: e.target.value }))}
             />
             <In
               label="К-сть прописаних"

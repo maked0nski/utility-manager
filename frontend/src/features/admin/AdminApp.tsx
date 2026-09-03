@@ -184,6 +184,7 @@ export function AdminApp() {
     entrance: "",
     floor: "",
     room_count: "",
+    cabinet_markup_percent: "",
     latitude: "",
     longitude: "",
     google_maps_url: "",

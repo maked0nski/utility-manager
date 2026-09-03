@@ -12,7 +12,7 @@
 
 - One provider at a time: this plan implements and verifies ATP-0928 only. Vodokanal's equivalent worker change is a separate follow-up plan, done only after ATP-0928 is confirmed working live (per user instruction — no exceptions).
 - Cabinet tariff data must never reach `CalculationRow`/`BillingMonthSnapshotItem`/`BillingStatementItem` or any printed/report path — it is joined client-side from `ConnectionChargeLineItem` only, never added to the snapshot/statement row type.
-- `price_per_unit` on `ConnectionChargeLine` must never be modified automatically by the ATP-0928 worker after this plan — only by an admin, through the existing manual edit flow.
+- `price_per_unit` on `ConnectionChargeLine` must never be modified automatically by the ATP-0928 worker or the generic non-provider-specific fallback (Task 8) after this plan — only by an admin, through the existing manual edit flow. Vodokanal's own auto-write is the sole deliberate exception (see "Out of scope").
 - Cabinet passwords must never be sent to the browser in plaintext, in any automation list/detail response, from this point on.
 - Freshness threshold is exactly 15 days; floor is exactly 10% (`price_per_unit >= cabinet_price_per_unit * 1.10`).
 
@@ -774,7 +774,102 @@ Report the four observations above (Steps 3-6) so this task can be marked verifi
 
 ---
 
+## Task 8: Fix the same auto-write bug in the generic (non-Vodokanal, non-ATP-0928) provider fallback
+
+Discovered by Task 4's task reviewer while checking for remaining `_upsert_service_charge_line_price`
+call sites: `_run_single_setting` (`backend/app/workers/tariff_auto_check.py`) has a third branch —
+reached whenever a binding is neither Vodokanal nor ATP-0928 — that fetches a balance via
+`_fetch_visualservice_kvartplata` and silently overwrites `price_per_unit` the same way ATP-0928
+used to. This is live: 4 of the 6 automations that exist in the dev DB right now (any provider
+other than the one ATP-0928 automation and the one automation with no provider set) fall through
+to this exact branch whenever they have real cabinet credentials configured. Unlike Vodokanal
+(a fully separate, provider-specific function deliberately left alone per the user's "one
+provider at a time" instruction), this is shared generic code with no provider-specific scraping
+logic of its own — fixing it once fixes it for every provider that uses this fallback, using the
+same helper already built and tested in Task 3. The user explicitly asked for this fix now,
+before continuing to Task 5.
+
+**Files:**
+- Modify: `backend/app/workers/tariff_auto_check.py:1835-1862` (inside `_run_single_setting`'s
+  generic fallback)
+
+**Interfaces:**
+- Consumes: `_apply_cabinet_tariff_observation` (Task 3) — already imported in this file (used by
+  Task 4 in the same module).
+
+- [ ] **Step 1: Replace the auto-write block**
+
+In `backend/app/workers/tariff_auto_check.py`, replace lines 1835-1862:
+
+```python
+    current_value = Decimal(current_line.price_per_unit)
+    if raw <= current_value:
+        setting.auto_check_status = "no_change"
+        setting.auto_check_completed_for_period = True
+        setting.auto_check_last_value_rounded = current_value.quantize(Decimal("0.01"))
+        return
+
+    rounded = _round_up_to_half(raw).quantize(Decimal("0.01"))
+    target_line, _ = _upsert_service_charge_line_price(
+        db,
+        apartment_id=setting.apartment_id,
+        service_name=setting.service_name,
+        period_start=period_start,
+        new_value=rounded,
+        connection_id=setting.connection_id,
+        service_catalog_id=setting.service_catalog_id,
+    )
+    if target_line is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "Target charge line for period not found"
+        return
+
+    db.flush()
+    _recalc_from_period(db, setting.apartment_id, target_year, target_month)
+    setting.auto_check_status = "updated"
+    setting.auto_check_completed_for_period = True
+    setting.auto_check_last_updated_at = now_utc
+    setting.auto_check_last_value_rounded = rounded
+```
+
+with:
+
+```python
+    current_value = Decimal(current_line.price_per_unit)
+    rounded = _round_up_to_half(raw).quantize(Decimal("0.01"))
+    _apply_cabinet_tariff_observation(current_line, candidate_value=rounded, checked_at=now_utc)
+    setting.auto_check_completed_for_period = True
+    setting.auto_check_last_value_rounded = rounded
+    setting.auto_check_status = "no_change" if raw <= current_value else "updated"
+```
+
+`price_per_unit` is never written; `db.flush()`/`_recalc_from_period` are dropped for the same
+reason as Task 4 (nothing to recalculate when the price itself never changes). The
+`"no_change"`/`"updated"` status strings are unchanged, so the frontend label fixed in Task 4
+Step 2 (`"Тариф з кабінету отримано"`) already covers this path too — no frontend change needed.
+
+- [ ] **Step 2: Run backend tests**
+
+Run: `docker exec um_api pytest -q`
+Expected: all pass.
+
+- [ ] **Step 3: Confirm no auto-check call sites remain outside Vodokanal**
+
+Run: `grep -n "_upsert_service_charge_line_price" backend/app/workers/tariff_auto_check.py`
+Expected: the function's own definition, plus exactly one remaining call site inside
+`_run_vodokanal` (~line 1373 area) — none in `_run_atp0928` or in `_run_single_setting`'s generic
+fallback.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/app/workers/tariff_auto_check.py
+git commit -m "fix(tariff-worker): stop the generic provider fallback auto-writing price_per_unit too"
+```
+
+---
+
 ## Out of scope (explicit)
 
-- **Vodokanal's own auto-write** (`_run_vodokanal`, tariff branch around the current line 1344) is left untouched in this plan. It will keep silently raising `price_per_unit` when the cabinet value is higher, exactly as today. Do not touch it here — per the user's explicit instruction, each provider is implemented and verified on its own, and Vodokanal comes only after ATP-0928 is confirmed working. The design spec (`docs/superpowers/specs/2026-09-03-cabinet-tariff-comparison-design.md`) already documents the equivalent change for Vodokanal for when that plan is written.
+- **Vodokanal's own auto-write** (`_run_vodokanal`, tariff branch around the current line 1344) is left untouched in this plan. It will keep silently raising `price_per_unit` when the cabinet value is higher, exactly as today. Do not touch it here — per the user's explicit instruction, each provider-specific scraping implementation is done and verified on its own, and Vodokanal comes only after ATP-0928 is confirmed working. The design spec (`docs/superpowers/specs/2026-09-03-cabinet-tariff-comparison-design.md`) already documents the equivalent change for Vodokanal for when that plan is written. (The *generic*, non-provider-specific fallback in `_run_single_setting` had the same bug and is fixed by Task 8, added mid-plan after Task 4's reviewer found it live for 4 of the 6 dev-DB automations — that fix is shared code, not a provider-specific implementation, so it doesn't conflict with the "one provider at a time" rule the way touching Vodokanal's own function would.)
 - A stale/incorrect `missingDataMessage` warning noticed during manual testing for a different reason than the plaintext password (e.g. an empty `cabinet_url`) is not separately investigated here — Task 1 fixes the specific password-related false-positive path; if a URL/login-related false positive is still observed during Task 7, report it rather than silently patching around it.

@@ -1833,30 +1833,8 @@ def _run_single_setting(
         return
 
     current_value = Decimal(current_line.price_per_unit)
-    if raw <= current_value:
-        setting.auto_check_status = "no_change"
-        setting.auto_check_completed_for_period = True
-        setting.auto_check_last_value_rounded = current_value.quantize(Decimal("0.01"))
-        return
-
     rounded = _round_up_to_half(raw).quantize(Decimal("0.01"))
-    target_line, _ = _upsert_service_charge_line_price(
-        db,
-        apartment_id=setting.apartment_id,
-        service_name=setting.service_name,
-        period_start=period_start,
-        new_value=rounded,
-        connection_id=setting.connection_id,
-        service_catalog_id=setting.service_catalog_id,
-    )
-    if target_line is None:
-        setting.auto_check_status = "error"
-        setting.auto_check_message = "Target charge line for period not found"
-        return
-
-    db.flush()
-    _recalc_from_period(db, setting.apartment_id, target_year, target_month)
-    setting.auto_check_status = "updated"
+    _apply_cabinet_tariff_observation(current_line, candidate_value=rounded, checked_at=now_utc)
     setting.auto_check_completed_for_period = True
-    setting.auto_check_last_updated_at = now_utc
     setting.auto_check_last_value_rounded = rounded
+    setting.auto_check_status = "no_change" if raw <= current_value else "updated"

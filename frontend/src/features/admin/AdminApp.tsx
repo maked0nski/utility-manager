@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Route, Routes, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { asInt, dt, money, periodLabel } from "@/shared/utils/format";
 import { calculateAccrualTotal, calculatePortfolioTotals } from "@/shared/utils/billing-selectors";
@@ -23,8 +24,7 @@ import { usePropertyActions } from "@/features/properties/hooks/use-property-act
 import { useMeterActions } from "@/features/properties/hooks/use-meter-actions";
 import { useEquipmentActions } from "@/features/properties/hooks/use-equipment-actions";
 import { PropertyDrawer } from "@/features/properties/components/PropertyDrawer";
-import { Modal } from "@/shared/ui/modal";
-import { ProvidersTab } from "@/features/providers/components/ProvidersTab";
+import { ReferencesPage } from "@/features/references/pages/ReferencesPage";
 import { DashboardContent } from "@/features/layout/components/DashboardContent";
 import { AppModals } from "@/features/layout/components/AppModals";
 import { ProfileSettingsModal } from "@/features/layout/components/ProfileSettingsModal";
@@ -89,6 +89,7 @@ type DetailLike = {
 };
 
 export function AdminApp() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { token: tok, saveToken, clearToken, sessionError, setSessionError } = useSession();
   const { theme, cycleTheme } = useTheme();
@@ -120,8 +121,6 @@ export function AdminApp() {
     setPwdModal,
     adminsModal,
     setAdminsModal,
-    catalogsModal,
-    setCatalogsModal,
     toasts,
     setToasts,
     confirm,
@@ -1140,31 +1139,10 @@ export function AdminApp() {
         boot={boot}
         onOpenDrawer={() => setDrawer(true)}
         onOpenAdmins={() => setAdminsModal(true)}
-        onOpenCatalogs={() => setCatalogsModal(true)}
+        onOpenCatalogs={() => navigate("/admin/references")}
         onOpenSettings={() => setProfileSettingsOpen(true)}
         onLogout={out}
       />
-      {catalogsModal ? (
-        <Modal title="Довідники (спільні для всіх об'єктів)" onClose={() => setCatalogsModal(false)}>
-          <p className="helper">
-            Зміни тут впливають на всі об&apos;єкти нерухомості, а не лише на обраний зараз.
-          </p>
-          <ProvidersTab
-            providers={providersQuery.data || []}
-            meterTypes={meterTypesQuery.data || []}
-            serviceCatalog={serviceCatalogQuery.data || []}
-            createProvider={createProvider}
-            updateProvider={updateProvider}
-            deleteProvider={deleteProvider}
-            createMeterType={createMeterType}
-            updateMeterType={updateMeterType}
-            deleteMeterType={deleteMeterType}
-            createServiceCatalogItem={createServiceCatalogItem}
-            updateServiceCatalogItem={updateServiceCatalogItem}
-            deleteServiceCatalogItem={deleteServiceCatalogItem}
-          />
-        </Modal>
-      ) : null}
       {profileSettingsOpen ? (
         <ProfileSettingsModal
           username={boot.username}
@@ -1177,154 +1155,185 @@ export function AdminApp() {
           }}
         />
       ) : null}
-      <PropertyDrawer
-        drawer={drawer}
-        setDrawer={setDrawer}
-        apartmentsQuery={apartmentsQuery}
-        ap={ap}
-        setAp={setAp}
-        createAp={createAp}
-        totals={totals}
-        money={money}
-        props={props}
-        tenants={tenants}
-        sel={sel}
-        setSel={setSel}
-        newTenant={newTenant}
-        setNewTenant={setNewTenant}
-        createTenantOnly={createTenantOnly}
-        updateTenantById={updateTenantById}
-        deleteTenantById={deleteTenantById}
-      />
-      <DashboardContent
-        apartmentsQuery={apartmentsQuery}
-        detailBundleQuery={detailBundleQuery}
-        sel={sel}
-        detail={detail}
-        shiftPeriod={shiftPeriod}
-        onPickPeriod={(year, month) => {
-          if (isPeriodAfterMaxAllowed(year, month)) return;
-          setPeriod({ year, month });
-        }}
-        maxPeriodInput={maxPeriodInput}
-        periodLabel={periodLabel}
-        p={p}
-        money={money}
-        tab={tab}
-        setTab={setTab}
-        dt={dt}
-        payments={payments}
-        prepareBillingStatement={prepareBillingStatement}
-        sendBillingStatement={sendBillingStatement}
-        toggleSort={toggleSort}
-        sortIcon={sortIcon}
-        sortedRows={sortedRows}
-        editSrv={editSrv}
-        editRef={editRef}
-        asInt={asInt}
-        start={start}
-        setEditSrv={setEditSrv}
-        setDraft={setDraft}
-        draft={draft}
-        changed={changed}
-        saveRow={saveRow}
-        recalcMonth={recalcMonth}
-        confirmMonth={confirmMonth}
-        reopenMonth={reopenMonth}
-        resetSortDefault={resetSortDefault}
-        accr={accr}
-        history={history}
-        openBatchReadingModal={openBatchReadingModal}
-        batchReadingMeterOptions={batchReadingMeterOptions}
-        batchReadingModalOpen={batchReadingModalOpen}
-        closeBatchReadingModal={() => setBatchReadingModalOpen(false)}
-        batchReadingMetas={batchReadingMetas}
-        batchReadingDraft={batchReadingDraft}
-        setBatchReadingDraft={setBatchReadingDraft}
-        saveBatchReadings={saveBatchReadings}
-        batchReadingSaving={batchReadingSaving}
-        newTenant={newTenant}
-        setNewTenant={setNewTenant}
-        createTenantAndAssign={createTenantAndAssign}
-        tenant={tenant}
-        setTenant={setTenant}
-        assignExisting={assignExisting}
-        setAssignExisting={setAssignExisting}
-        tenants={tenants}
-        assignTenant={assignTenant}
-        tenancies={tenancies}
-        tenancyEndDate={tenancyEndDate}
-        setTenancyEndDate={setTenancyEndDate}
-        saveTenant={saveTenant}
-        endTenancy={endTenancy}
-        createPayment={createPayment}
-        updatePayment={updatePayment}
-        deletePayment={deletePayment}
-        own={own}
-        setOwn={setOwn}
-        addOwner={addOwner}
-        mnt={mnt}
-        setMnt={setMnt}
-        addMaint={addMaint}
-        oc={oc}
-        mr={mr}
-        openOc={openOc}
-        openMr={openMr}
-        saveAp={saveAp}
-        delAp={delAp}
-        ap={ap}
-        setAp={setAp}
-        meters={meters}
-        replacingMeterId={replacingMeterId}
-        replacementForm={replacementForm}
-        setReplacementForm={setReplacementForm}
-        startReplaceMeter={startReplaceMeter}
-        submitReplacement={submitReplacement}
-        resetReplacementForm={resetReplacementForm}
-        equipment={equipment}
-        equipmentForm={equipmentForm}
-        setEquipmentForm={setEquipmentForm}
-        editingEquipmentId={editingEquipmentId}
-        submitEquipment={submitEquipment}
-        startEditEquipment={startEditEquipment}
-        askDeleteEquipment={askDeleteEquipment}
-        resetEquipmentForm={resetEquipmentForm}
-        automations={automationsQuery.data || []}
-        automationTemplates={automationTemplatesQuery.data || []}
-        automationsLoading={automationsQuery.isLoading || automationsQuery.isFetching}
-        saveAutomation={saveAutomation}
-        runAutomation={runAutomation}
-        createAutomationTemplate={createAutomationTemplate}
-        updateAutomationTemplate={updateAutomationTemplate}
-        deleteAutomationTemplate={deleteAutomationTemplate}
-        connectTemplateToApartment={connectTemplateToApartment}
-        disconnectTemplateFromApartment={disconnectTemplateFromApartment}
-        fetchAutomationLogs={fetchAutomationLogs}
-        runAutomationCycle={runAutomationCycle}
-        previewAutomationCycle={previewAutomationCycle}
-        automationCycleRuns={automationCycleRunsQuery.data || []}
-        fetchAutomationCycleRunDetail={fetchAutomationCycleRunDetail}
-        selectedApartmentId={sel?.apartment_id || null}
-        providers={providersQuery.data || []}
-        meterTypes={meterTypesQuery.data || []}
-        serviceCatalog={serviceCatalogQuery.data || []}
-        serviceConnections={serviceConnectionsQuery.data || []}
-        serviceConnectionsLoading={serviceConnectionsQuery.isLoading || serviceConnectionsQuery.isFetching}
-        createServiceConnection={createServiceConnection}
-        updateServiceConnection={updateServiceConnection}
-        deleteServiceConnection={deleteServiceConnection}
-        electricityPlanForm={electricityPlanForm}
-        setElectricityPlanForm={setElectricityPlanForm}
-        electricityMeters={electricityMeters}
-        saveElectricityPlan={saveElectricityPlan}
-        meterForm={meterForm}
-        setMeterForm={setMeterForm}
-        editingMeterId={editingMeterId}
-        submitMeter={submitMeter}
-        startEditMeter={startEditMeter}
-        askDeleteMeter={askDeleteMeter}
-        resetMeterForm={resetMeterForm}
-      />
+      <Routes>
+        <Route
+          path="references/*"
+          element={
+            <ReferencesPage
+              onClose={() => navigate("/admin")}
+              providers={providersQuery.data || []}
+              meterTypes={meterTypesQuery.data || []}
+              serviceCatalog={serviceCatalogQuery.data || []}
+              createProvider={createProvider}
+              updateProvider={updateProvider}
+              deleteProvider={deleteProvider}
+              createMeterType={createMeterType}
+              updateMeterType={updateMeterType}
+              deleteMeterType={deleteMeterType}
+              createServiceCatalogItem={createServiceCatalogItem}
+              updateServiceCatalogItem={updateServiceCatalogItem}
+              deleteServiceCatalogItem={deleteServiceCatalogItem}
+              confirmRun={confirmRun}
+              pushToast={pushToast}
+            />
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <>
+              <PropertyDrawer
+                drawer={drawer}
+                setDrawer={setDrawer}
+                apartmentsQuery={apartmentsQuery}
+                ap={ap}
+                setAp={setAp}
+                createAp={createAp}
+                totals={totals}
+                money={money}
+                props={props}
+                tenants={tenants}
+                sel={sel}
+                setSel={setSel}
+                newTenant={newTenant}
+                setNewTenant={setNewTenant}
+                createTenantOnly={createTenantOnly}
+                updateTenantById={updateTenantById}
+                deleteTenantById={deleteTenantById}
+              />
+              <DashboardContent
+                apartmentsQuery={apartmentsQuery}
+                detailBundleQuery={detailBundleQuery}
+                sel={sel}
+                detail={detail}
+                shiftPeriod={shiftPeriod}
+                onPickPeriod={(year, month) => {
+                  if (isPeriodAfterMaxAllowed(year, month)) return;
+                  setPeriod({ year, month });
+                }}
+                maxPeriodInput={maxPeriodInput}
+                periodLabel={periodLabel}
+                p={p}
+                money={money}
+                tab={tab}
+                setTab={setTab}
+                dt={dt}
+                payments={payments}
+                prepareBillingStatement={prepareBillingStatement}
+                sendBillingStatement={sendBillingStatement}
+                toggleSort={toggleSort}
+                sortIcon={sortIcon}
+                sortedRows={sortedRows}
+                editSrv={editSrv}
+                editRef={editRef}
+                asInt={asInt}
+                start={start}
+                setEditSrv={setEditSrv}
+                setDraft={setDraft}
+                draft={draft}
+                changed={changed}
+                saveRow={saveRow}
+                recalcMonth={recalcMonth}
+                confirmMonth={confirmMonth}
+                reopenMonth={reopenMonth}
+                resetSortDefault={resetSortDefault}
+                accr={accr}
+                history={history}
+                openBatchReadingModal={openBatchReadingModal}
+                batchReadingMeterOptions={batchReadingMeterOptions}
+                batchReadingModalOpen={batchReadingModalOpen}
+                closeBatchReadingModal={() => setBatchReadingModalOpen(false)}
+                batchReadingMetas={batchReadingMetas}
+                batchReadingDraft={batchReadingDraft}
+                setBatchReadingDraft={setBatchReadingDraft}
+                saveBatchReadings={saveBatchReadings}
+                batchReadingSaving={batchReadingSaving}
+                newTenant={newTenant}
+                setNewTenant={setNewTenant}
+                createTenantAndAssign={createTenantAndAssign}
+                tenant={tenant}
+                setTenant={setTenant}
+                assignExisting={assignExisting}
+                setAssignExisting={setAssignExisting}
+                tenants={tenants}
+                assignTenant={assignTenant}
+                tenancies={tenancies}
+                tenancyEndDate={tenancyEndDate}
+                setTenancyEndDate={setTenancyEndDate}
+                saveTenant={saveTenant}
+                endTenancy={endTenancy}
+                createPayment={createPayment}
+                updatePayment={updatePayment}
+                deletePayment={deletePayment}
+                own={own}
+                setOwn={setOwn}
+                addOwner={addOwner}
+                mnt={mnt}
+                setMnt={setMnt}
+                addMaint={addMaint}
+                oc={oc}
+                mr={mr}
+                openOc={openOc}
+                openMr={openMr}
+                saveAp={saveAp}
+                delAp={delAp}
+                ap={ap}
+                setAp={setAp}
+                meters={meters}
+                replacingMeterId={replacingMeterId}
+                replacementForm={replacementForm}
+                setReplacementForm={setReplacementForm}
+                startReplaceMeter={startReplaceMeter}
+                submitReplacement={submitReplacement}
+                resetReplacementForm={resetReplacementForm}
+                equipment={equipment}
+                equipmentForm={equipmentForm}
+                setEquipmentForm={setEquipmentForm}
+                editingEquipmentId={editingEquipmentId}
+                submitEquipment={submitEquipment}
+                startEditEquipment={startEditEquipment}
+                askDeleteEquipment={askDeleteEquipment}
+                resetEquipmentForm={resetEquipmentForm}
+                automations={automationsQuery.data || []}
+                automationTemplates={automationTemplatesQuery.data || []}
+                automationsLoading={automationsQuery.isLoading || automationsQuery.isFetching}
+                saveAutomation={saveAutomation}
+                runAutomation={runAutomation}
+                createAutomationTemplate={createAutomationTemplate}
+                updateAutomationTemplate={updateAutomationTemplate}
+                deleteAutomationTemplate={deleteAutomationTemplate}
+                connectTemplateToApartment={connectTemplateToApartment}
+                disconnectTemplateFromApartment={disconnectTemplateFromApartment}
+                fetchAutomationLogs={fetchAutomationLogs}
+                runAutomationCycle={runAutomationCycle}
+                previewAutomationCycle={previewAutomationCycle}
+                automationCycleRuns={automationCycleRunsQuery.data || []}
+                fetchAutomationCycleRunDetail={fetchAutomationCycleRunDetail}
+                selectedApartmentId={sel?.apartment_id || null}
+                providers={providersQuery.data || []}
+                meterTypes={meterTypesQuery.data || []}
+                serviceCatalog={serviceCatalogQuery.data || []}
+                serviceConnections={serviceConnectionsQuery.data || []}
+                serviceConnectionsLoading={serviceConnectionsQuery.isLoading || serviceConnectionsQuery.isFetching}
+                createServiceConnection={createServiceConnection}
+                updateServiceConnection={updateServiceConnection}
+                deleteServiceConnection={deleteServiceConnection}
+                electricityPlanForm={electricityPlanForm}
+                setElectricityPlanForm={setElectricityPlanForm}
+                electricityMeters={electricityMeters}
+                saveElectricityPlan={saveElectricityPlan}
+                meterForm={meterForm}
+                setMeterForm={setMeterForm}
+                editingMeterId={editingMeterId}
+                submitMeter={submitMeter}
+                startEditMeter={startEditMeter}
+                askDeleteMeter={askDeleteMeter}
+                resetMeterForm={resetMeterForm}
+              />
+            </>
+          }
+        />
+      </Routes>
       <AppModals
         payModal={payModal}
         setPayModal={setPayModal}

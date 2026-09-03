@@ -3646,7 +3646,12 @@ def delete_service_catalog_item(service_catalog_id: int, db: Session = Depends(g
         select(ServiceCatalog.id).where(ServiceCatalog.derived_from_service_id == service_catalog_id).limit(1)
     )
     if in_use is not None:
-        raise HTTPException(status_code=409, detail="Service is already used in object services or as a derived source.")
+        raise HTTPException(
+            status_code=409,
+            detail="Послуга вже підключена до об'єкта або використовується як джерело для іншої послуги. "
+            "Видалення заблоковано, щоб не зачепити попередні розрахунки — вимкніть \"Активна послуга\" в редагуванні, "
+            "щоб прибрати її з нових підключень.",
+        )
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
@@ -3996,7 +4001,12 @@ def delete_meter_type(meter_type_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Meter type not found.")
     in_use = db.scalar(select(Meter.id).where(Meter.meter_type_id == meter_type_id).limit(1))
     if in_use is not None:
-        raise HTTPException(status_code=409, detail="Meter type is already used in meters.")
+        raise HTTPException(
+            status_code=409,
+            detail="Тип лічильника вже використовується в одному з лічильників. "
+            "Видалення заблоковано, щоб не зачепити попередні розрахунки — вимкніть \"Активний тип\" в редагуванні, "
+            "щоб прибрати його з нових лічильників.",
+        )
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
@@ -4057,7 +4067,12 @@ def delete_provider(provider_id: int, db: Session = Depends(get_db)):
         select(ApartmentServiceConnection.id).where(ApartmentServiceConnection.provider_id == provider_id).limit(1)
     )
     if in_use is not None:
-        raise HTTPException(status_code=409, detail="Постачальник вже використовується у підключеннях або автоматизаціях.")
+        raise HTTPException(
+            status_code=409,
+            detail="Постачальник вже використовується у підключеннях або автоматизаціях. "
+            "Видалення заблоковано, щоб не зачепити попередні розрахунки — вимкніть \"Активний постачальник\" в редагуванні, "
+            "щоб прибрати його з нових підключень.",
+        )
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

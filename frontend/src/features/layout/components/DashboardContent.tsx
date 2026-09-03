@@ -1,5 +1,6 @@
 import { useMemo, useRef } from "react";
 import { CalculationTab } from "@/features/calculation/components/CalculationTab";
+import { computeCatchUpSuggestion, type CatchUpSuggestion } from "@/features/calculation/cabinet-tariff";
 import { PaymentsTab } from "@/features/payments/components/PaymentsTab";
 import { TenantTab } from "@/features/tenants/components/TenantTab";
 import { AutomationsTab } from "@/features/tariffs/components/AutomationsTab";
@@ -137,11 +138,19 @@ export function DashboardContent() {
   } = useDashboardContext();
 
   const cabinetTariffByLineId = useMemo(() => {
-    const map: Record<number, { price: number; checkedAt: string }> = {};
+    const map: Record<
+      number,
+      { price: number; checkedAt: string; isEstimated: boolean; catchUp: CatchUpSuggestion | null }
+    > = {};
     for (const conn of serviceConnections) {
       for (const line of conn.charge_lines) {
         if (line.cabinet_price_per_unit != null && line.cabinet_checked_at) {
-          map[line.id] = { price: Number(line.cabinet_price_per_unit), checkedAt: line.cabinet_checked_at };
+          map[line.id] = {
+            price: Number(line.cabinet_price_per_unit),
+            checkedAt: line.cabinet_checked_at,
+            isEstimated: Boolean(line.cabinet_price_is_estimated),
+            catchUp: computeCatchUpSuggestion(line, conn.charge_lines),
+          };
         }
       }
     }

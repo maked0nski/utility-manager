@@ -222,6 +222,7 @@ export interface ConnectionChargeLineItem {
   is_active: boolean;
   cabinet_price_per_unit?: string | null;
   cabinet_checked_at?: string | null;
+  cabinet_price_is_estimated?: boolean | null;
   created_at: string;
 }
 

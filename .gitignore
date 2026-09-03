@@ -38,3 +38,7 @@ frontend/coverage/
 
 # Legacy/IDE artifacts
 **/*.iml
+
+# Local dev tooling scratch
+.worktrees/
+.superpowers/

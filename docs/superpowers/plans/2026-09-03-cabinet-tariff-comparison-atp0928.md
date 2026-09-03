@@ -869,6 +869,288 @@ git commit -m "fix(tariff-worker): stop the generic provider fallback auto-writi
 
 ---
 
+## Task 9: Regression tests for the three real bugs found during this branch's own review
+
+Added after the final whole-branch review flagged that three real bugs found and fixed while
+building this branch (Tasks 4/6/7's own fixes) shipped with no automated test that would catch
+them if reintroduced by a future refactor: the residents-multiplier → `line_quantity` unit
+mismatch, the manual serializer silently dropping the two new cabinet fields, and the
+password-reveal endpoint's role gating.
+
+**Files:**
+- Modify: `backend/app/workers/tariff_auto_check.py:417-419` (extract a pure helper next to
+  `_round_up_to_half`), `:964-971` (use it in `_run_atp0928`)
+- Create: `backend/tests/test_atp0928_current_total.py`
+- Modify: `backend/tests/test_v1_flow.py` (add two new test functions reusing its existing
+  `client`/login/fixture patterns — do not create a second TestClient/DB setup)
+
+**Interfaces:**
+- Produces: `_current_line_total(apartment: Apartment, current_line: ConnectionChargeLine) -> Decimal`
+  — pure, no DB session, no HTTP. Used by `_run_atp0928`; testable without mocking the scraping flow
+  (which this codebase deliberately does not do — see Task 7's rationale).
+
+### Part A — extract and test the quantity/total computation
+
+- [ ] **Step 1: Write the failing test**
+
+Create `backend/tests/test_atp0928_current_total.py`:
+
+```python
+from decimal import Decimal
+
+from app.models import Apartment, ConnectionChargeLine
+from app.workers.tariff_auto_check import _current_line_total
+
+
+def test_fixed_price_line_ignores_registered_residents():
+    apartment = Apartment(registered_residents=3)
+    line = ConnectionChargeLine(
+        price_per_unit=Decimal("185.00"),
+        quantity_source="fixed_1",
+        quantity_multiplier=Decimal("1.000"),
+    )
+    assert _current_line_total(apartment, line) == Decimal("185.00")
+
+
+def test_per_resident_line_multiplies_by_registered_residents():
+    apartment = Apartment(registered_residents=3)
+    line = ConnectionChargeLine(
+        price_per_unit=Decimal("60.00"),
+        quantity_source="registered_residents",
+        quantity_multiplier=Decimal("1.000"),
+    )
+    assert _current_line_total(apartment, line) == Decimal("180.00")
+
+
+def test_zero_quantity_falls_back_to_one_unit():
+    apartment = Apartment(registered_residents=0)
+    line = ConnectionChargeLine(
+        price_per_unit=Decimal("50.00"),
+        quantity_source="registered_residents",
+        quantity_multiplier=Decimal("1.000"),
+    )
+    assert _current_line_total(apartment, line) == Decimal("50.00")
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `docker exec um_api pytest tests/test_atp0928_current_total.py -v`
+Expected: FAIL with `ImportError: cannot import name '_current_line_total'`
+
+- [ ] **Step 3: Extract the pure helper**
+
+In `backend/app/workers/tariff_auto_check.py`, after `_round_up_to_half` (after line 419, before
+the blank lines preceding the next function):
+
+```python
+def _current_line_total(apartment: Apartment, current_line: ConnectionChargeLine) -> Decimal:
+    quantity = line_quantity(apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier))
+    if quantity <= 0:
+        quantity = Decimal("1")
+    return (Decimal(current_line.price_per_unit) * quantity).quantize(Decimal("0.01"))
+```
+
+Then in `_run_atp0928`, replace lines 965-971:
+
+```python
+                current_line_quantity = line_quantity(
+                    apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier)
+                )
+                if current_line_quantity <= 0:
+                    current_line_quantity = Decimal("1")
+                current_per_person = Decimal(current_line.price_per_unit)
+                current_total = (current_per_person * current_line_quantity).quantize(Decimal("0.01"))
+```
+
+with:
+
+```python
+                current_per_person = Decimal(current_line.price_per_unit)
+                current_total = _current_line_total(apartment, current_line)
+```
+
+Note `current_line_quantity` is still used later in the same function (to convert
+`candidate_total_rounded` back into a per-unit price) — that later use stays as-is; only this one
+computation of `current_total` is replaced. If removing this assignment leaves
+`current_line_quantity` undefined for that later use, recompute it there instead with the same
+`line_quantity(apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier))`
+call (with the same `<= 0` fallback to `Decimal("1")`) rather than leaving two divergent
+implementations — check the actual current code at that point before deciding, since it was
+already correct pre-Task-9 and must stay correct.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `docker exec um_api pytest tests/test_atp0928_current_total.py -v`
+Expected: 3 passed
+
+- [ ] **Step 5: Run the full backend suite**
+
+Run: `docker exec um_api pytest -q`
+Expected: all pass (this extraction must not change `_run_atp0928`'s behavior, only where the
+computation lives).
+
+### Part B — round-trip test for the manual serializer
+
+- [ ] **Step 6: Add a test to `backend/tests/test_v1_flow.py`**
+
+Reuse this file's existing `client`, `/auth/admin/login` pattern, and apartment/service-catalog
+helpers (`_get_or_create_service_catalog`). Add:
+
+```python
+def test_service_connections_endpoint_includes_cabinet_tariff_fields():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Cabinet tariff round-trip address"},
+        headers=headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    catalog_id = _get_or_create_service_catalog(
+        headers, "cabinet_rt_waste", "Cabinet RT Waste", "fixed", "month"
+    )
+    connection = client.post(
+        "/admin/service-connections",
+        json={
+            "apartment_id": apartment_id,
+            "service_catalog_id": catalog_id,
+            "started_at": "2024-01-01",
+            "status": "active",
+        },
+        headers=headers,
+    )
+    assert connection.status_code == 201, connection.text
+    connection_id = connection.json()["id"]
+
+    charge_line = client.post(
+        f"/admin/service-connections/{connection_id}/charge-lines",
+        json={
+            "line_kind": "fixed",
+            "label": "Основний тариф",
+            "unit_name": "month",
+            "price_per_unit": "185.00",
+            "quantity_source": "fixed_1",
+            "quantity_multiplier": "1.000",
+            "effective_from": "2024-01-01",
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert charge_line.status_code == 201, charge_line.text
+    line_id = charge_line.json()["id"]
+
+    db = TestingSessionLocal()
+    line = db.get(ConnectionChargeLine, line_id)
+    line.cabinet_price_per_unit = Decimal("225.0000")
+    line.cabinet_checked_at = datetime(2026, 9, 3, 15, 24, 49)
+    db.commit()
+    db.close()
+
+    listed = client.get(f"/admin/apartments/{apartment_id}/service-connections", headers=headers)
+    assert listed.status_code == 200
+    listed_line = listed.json()[0]["charge_lines"][0]
+    assert listed_line["cabinet_price_per_unit"] == "225.0000"
+    assert listed_line["cabinet_checked_at"] is not None
+```
+
+`POST /admin/service-connections` (`ApartmentServiceConnectionCreate`) does not accept nested
+charge lines — that's why the test above creates the connection first, then posts its charge line
+separately to `POST /admin/service-connections/{connection_id}/charge-lines`
+(`ConnectionChargeLineCreate`, confirmed in `backend/app/api/admin/tariffs.py:510`). Add the
+needed imports (`Decimal`, `datetime`, `ConnectionChargeLine`) to this file's existing import
+block if not already present.
+
+- [ ] **Step 7: Run this test and the full suite**
+
+Run: `docker exec um_api pytest tests/test_v1_flow.py -k cabinet_tariff_fields -v`
+Expected: PASS
+
+Run: `docker exec um_api pytest -q`
+Expected: all pass
+
+### Part C — password-reveal endpoint authorization test
+
+- [ ] **Step 8: Add a test to `backend/tests/test_v1_flow.py`**
+
+```python
+def test_cabinet_password_reveal_requires_write_access():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    db = TestingSessionLocal()
+    if db.query(AdminUser).filter(AdminUser.username == "readonly_test").first() is None:
+        db.add(AdminUser(username="readonly_test", password_hash=hash_password("readonly123"), role=Role.read_only))
+        db.commit()
+    db.close()
+    readonly_login = client.post(
+        "/auth/admin/login", json={"username": "readonly_test", "password": "readonly123"}
+    )
+    assert readonly_login.status_code == 200
+    readonly_headers = {"Authorization": f"Bearer {readonly_login.json()['access_token']}"}
+
+    template = client.post(
+        "/admin/automation-templates",
+        json={"code": f"cabinet-pw-test-{uuid4().hex[:8]}", "name": "Cabinet PW Test Template"},
+        headers=admin_headers,
+    )
+    assert template.status_code == 201, template.text
+    template_id = template.json()["id"]
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Cabinet password reveal address"},
+        headers=admin_headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    automation = client.put(
+        f"/admin/apartments/{apartment_id}/automations",
+        json={"apartment_id": apartment_id, "template_id": template_id, "cabinet_password": "SuperSecret123"},
+        headers=admin_headers,
+    )
+    assert automation.status_code == 200, automation.text
+    automation_id = automation.json()["id"]
+
+    listed = client.get(f"/admin/apartments/{apartment_id}/automations", headers=admin_headers)
+    assert listed.status_code == 200
+    assert "cabinet_password" not in listed.json()[0]
+    assert listed.json()[0]["cabinet_password_set"] is True
+
+    forbidden = client.get(f"/admin/automations/{automation_id}/cabinet-password", headers=readonly_headers)
+    assert forbidden.status_code == 403
+
+    revealed = client.get(f"/admin/automations/{automation_id}/cabinet-password", headers=admin_headers)
+    assert revealed.status_code == 200
+    assert revealed.json()["cabinet_password"] == "SuperSecret123"
+```
+
+Add `AdminUser`, `Role`, and `hash_password` to this file's existing imports if not already
+present (check first — `hash_password`/`AdminUser` are already imported per this file's
+`setup_module`; `Role` likely needs adding from `app.models`).
+
+- [ ] **Step 9: Run this test and the full suite**
+
+Run: `docker exec um_api pytest tests/test_v1_flow.py -k cabinet_password_reveal -v`
+Expected: PASS
+
+Run: `docker exec um_api pytest -q`
+Expected: all pass
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add backend/app/workers/tariff_auto_check.py backend/tests/test_atp0928_current_total.py backend/tests/test_v1_flow.py
+git commit -m "test(tariff): add regression coverage for the quantity fix, the serializer fix, and cabinet-password auth"
+```
+
+---
+
 ## Out of scope (explicit)
 
 - **Vodokanal's own auto-write** (`_run_vodokanal`, tariff branch around the current line 1344) is left untouched in this plan. It will keep silently raising `price_per_unit` when the cabinet value is higher, exactly as today. Do not touch it here — per the user's explicit instruction, each provider-specific scraping implementation is done and verified on its own, and Vodokanal comes only after ATP-0928 is confirmed working. The design spec (`docs/superpowers/specs/2026-09-03-cabinet-tariff-comparison-design.md`) already documents the equivalent change for Vodokanal for when that plan is written. (The *generic*, non-provider-specific fallback in `_run_single_setting` had the same bug and is fixed by Task 8, added mid-plan after Task 4's reviewer found it live for 4 of the 6 dev-DB automations — that fix is shared code, not a provider-specific implementation, so it doesn't conflict with the "one provider at a time" rule the way touching Vodokanal's own function would.)

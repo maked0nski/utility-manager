@@ -606,6 +606,12 @@ def _apply_cabinet_tariff_observation(
     current_line.cabinet_price_is_estimated = is_estimated
 
 
+def _borrow_estimate_from_previous_line(previous_line: ConnectionChargeLine | None) -> Decimal | None:
+    if previous_line is None:
+        return None
+    return previous_line.cabinet_price_per_unit
+
+
 def _build_automation_bindings(
     db: Session,
     *,
@@ -1666,6 +1672,38 @@ def _run_single_setting(
 
     if check.status == "waiting":
         setting.auto_check_status = "waiting"
+        previous_year, previous_month = _prev_month(target_year, target_month)
+        previous_period_start = _month_start(previous_year, previous_month).date()
+        previous_line = _service_charge_line_for_period(
+            db,
+            apartment_id=setting.apartment_id,
+            service_name=setting.service_name,
+            period_start=previous_period_start,
+            connection_id=setting.connection_id,
+            service_catalog_id=setting.service_catalog_id,
+        )
+        estimate = _borrow_estimate_from_previous_line(previous_line)
+        if estimate is not None:
+            period_start = _month_start(target_year, target_month).date()
+            current_line = _service_charge_line_for_period(
+                db,
+                apartment_id=setting.apartment_id,
+                service_name=setting.service_name,
+                period_start=period_start,
+                connection_id=setting.connection_id,
+                service_catalog_id=setting.service_catalog_id,
+            )
+            if current_line is not None:
+                _apply_cabinet_tariff_observation(
+                    current_line,
+                    candidate_value=estimate,
+                    checked_at=now_utc,
+                    is_estimated=True,
+                )
+                setting.auto_check_message = (
+                    f"Кабінет ще не провів {target_month:02d}.{target_year}; "
+                    "підставлено оцінку з попереднього місяця"
+                )[:255]
         return
     if check.status == "error":
         setting.auto_check_status = "error"

@@ -3,6 +3,7 @@ import { In } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
 import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from "react";
 import type { BillingHistoryItem, CalculationRow, MeterExpectedRegistersResult } from "@/shared/api/types";
+import { evaluateCabinetTariff } from "../cabinet-tariff";
 
 type RowDraft = {
   previous_reading?: string;
@@ -69,6 +70,7 @@ interface CalculationTabProps {
   setBatchReadingDraft: Dispatch<SetStateAction<Record<string, Record<string, string>>>>;
   saveBatchReadings: () => Promise<void>;
   batchReadingSaving?: boolean;
+  cabinetTariffByLineId: Record<number, { price: number; checkedAt: string }>;
 }
 
 type DisplayRow =
@@ -115,6 +117,7 @@ export function CalculationTab({
   setBatchReadingDraft,
   saveBatchReadings,
   batchReadingSaving,
+  cabinetTariffByLineId,
 }: CalculationTabProps) {
   const isCompensationRow = (row: CalculationRow) => row.service_name.startsWith("Відшкодування:");
   const rowByLineId = new Map<number, CalculationRow>();
@@ -367,6 +370,30 @@ export function CalculationTab({
                     ) : (
                       money(r.unit_price)
                     )}
+                    {r.line_id != null && cabinetTariffByLineId[r.line_id] ? (() => {
+                      const cabinet = cabinetTariffByLineId[r.line_id];
+                      const status = evaluateCabinetTariff(Number(r.unit_price), cabinet);
+                      return (
+                        <div className="helper">
+                          <span className={`status-pill ${status.freshness === "fresh" ? "ok" : "error"}`}>
+                            Кабінет: {money(cabinet.price)}
+                          </span>
+                          {status.floorViolation ? (
+                            <button
+                              type="button"
+                              className="status-pill draft"
+                              title="Мій тариф має бути не менше ніж на 10% вищим за тариф з кабінету. Клік — підставити рекомендоване значення."
+                              onClick={() => {
+                                if (!e) start(r);
+                                setDraft((s) => ({ ...s, unit_price: String(status.suggestedPrice) }));
+                              }}
+                            >
+                              ⚠ нижче на 10%+ · рекомендовано {money(status.suggestedPrice)}
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })() : null}
                   </td>
                   <td>
                     {money(r.amount)}

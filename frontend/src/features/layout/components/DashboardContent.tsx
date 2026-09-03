@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { CalculationTab } from "@/features/calculation/components/CalculationTab";
 import { PaymentsTab } from "@/features/payments/components/PaymentsTab";
 import { TenantTab } from "@/features/tenants/components/TenantTab";
@@ -135,6 +135,18 @@ export function DashboardContent() {
     submitReplacement,
     resetReplacementForm,
   } = useDashboardContext();
+
+  const cabinetTariffByLineId = useMemo(() => {
+    const map: Record<number, { price: number; checkedAt: string }> = {};
+    for (const conn of serviceConnections) {
+      for (const line of conn.charge_lines) {
+        if (line.cabinet_price_per_unit != null && line.cabinet_checked_at) {
+          map[line.id] = { price: Number(line.cabinet_price_per_unit), checkedAt: line.cabinet_checked_at };
+        }
+      }
+    }
+    return map;
+  }, [serviceConnections]);
 
   const periodPickerRef = useRef<HTMLInputElement | null>(null);
 
@@ -351,6 +363,7 @@ export function DashboardContent() {
               setBatchReadingDraft={setBatchReadingDraft}
               saveBatchReadings={saveBatchReadings}
               batchReadingSaving={batchReadingSaving}
+              cabinetTariffByLineId={cabinetTariffByLineId}
             />
           )}
           {tab === "payments" && (

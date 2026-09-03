@@ -8,10 +8,10 @@ from typing import Protocol
 @dataclass(slots=True)
 class ProviderImportRecord:
     service_name: str
-    service_catalog_code: str | None = None
     year: int
     month: int
     accrued: Decimal
+    service_catalog_code: str | None = None
     paid: Decimal = Decimal("0.00")
     adjustment: Decimal = Decimal("0.00")
     benefit: Decimal = Decimal("0.00")

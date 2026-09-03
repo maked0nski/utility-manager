@@ -10,6 +10,7 @@ from app.workers.tariff_auto_check import (
     _parse_vodokanal_tariffs,
     _parse_vkcab_price,
     _extract_vkcab_osr,
+    _vodokanal_acceptable_submission_periods,
 )
 
 
@@ -74,6 +75,24 @@ def test_extract_vkcab_osr_from_dashboard_markup():
     html = '<div id="vkcab-app" data-osr="812363" data-agree="0">'
     assert _extract_vkcab_osr(html) == "812363"
     assert _extract_vkcab_osr("<div>no app here</div>") is None
+
+
+def test_vodokanal_acceptable_submission_periods_cross_month_window():
+    # Target period August 2026, window 25..3 straddles Aug and Sep -
+    # a submission near the window's start or end could be filed under either.
+    periods = _vodokanal_acceptable_submission_periods(2026, 8, day_from=25, day_to=3)
+    assert periods == {202608, 202609}
+
+
+def test_vodokanal_acceptable_submission_periods_year_rollover():
+    periods = _vodokanal_acceptable_submission_periods(2026, 12, day_from=25, day_to=3)
+    assert periods == {202612, 202701}
+
+
+def test_vodokanal_acceptable_submission_periods_non_cross_month_window():
+    # A regular (non cross-month) window doesn't straddle two calendar months.
+    periods = _vodokanal_acceptable_submission_periods(2026, 8, day_from=1, day_to=10)
+    assert periods == {202608}
 
 
 def test_parse_atp0928_accrued_from_html_table():

@@ -212,6 +212,31 @@ def _vodokanal_target_period(local_now: datetime, day_from: int, day_to: int) ->
     return local_now.year, local_now.month
 
 
+def _vodokanal_acceptable_submission_periods(
+    target_year: int, target_month: int, day_from: int, day_to: int
+) -> set[int]:
+    """Calendar-month period labels the vkcab site may use for a reading
+
+    attributed to (target_year, target_month) by our own app.
+
+    The site stamps `podani[].period` with the calendar month the submission
+    actually happened in, not the month our app attributes the window's
+    reading to. A cross-month window (day_from > day_to, e.g. 25..3) straddles
+    two calendar months, so a submission for this target period could be
+    filed under either one depending on which day it landed on - and could
+    still be checked again after the calendar month has rolled over while the
+    window (and its target period) haven't. Accept both labels so a later
+    recheck doesn't look like "not yet submitted" and resubmit.
+    """
+    periods = {target_year * 100 + target_month}
+    if day_from > day_to:
+        next_year, next_month = target_year, target_month + 1
+        if next_month > 12:
+            next_year, next_month = next_year + 1, 1
+        periods.add(next_year * 100 + next_month)
+    return periods
+
+
 def _parse_decimal(value: str) -> Decimal | None:
     cleaned = value.strip().replace(" ", "").replace(",", ".")
     if not cleaned:
@@ -1062,12 +1087,9 @@ def _run_vodokanal(
                             target_reading_year, target_reading_month = _vodokanal_target_period(
                                 local_now, day_from, day_to
                             )
-                            # The site logs `podani[].period` as the calendar month of the
-                            # submission itself (e.g. a reading submitted 02.09 in the
-                            # 25 Aug-3 Sep window is filed under period 202609), which can
-                            # differ from the month our own app attributes the reading to
-                            # (`target_reading_year`/`_month`, used only for our DB lookup below).
-                            today_period = local_now.year * 100 + local_now.month
+                            acceptable_periods = _vodokanal_acceptable_submission_periods(
+                                target_reading_year, target_reading_month, day_from, day_to
+                            )
                             current_reading = _find_current_meter_reading_for_service(
                                 db,
                                 apartment_id=setting.apartment_id,
@@ -1087,8 +1109,14 @@ def _run_vodokanal(
                                     has_error = True
                                     message_parts.append("У кабінеті відсутній лічильник для submit")
                                 else:
+                                    def _podani_period(row: dict) -> int | None:
+                                        try:
+                                            return int(row.get("period"))
+                                        except (TypeError, ValueError):
+                                            return None
+
                                     already_submitted = any(
-                                        str(row.get("period") or "") == str(today_period)
+                                        _podani_period(row) in acceptable_periods
                                         and _parse_decimal(str(row.get("pokaznyk") or ""))
                                         == current_reading.quantize(Decimal("0.001"))
                                         for row in (personal_data.get("podani") or [])

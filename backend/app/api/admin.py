@@ -1946,7 +1946,7 @@ def upsert_electricity_plan(
                 meter_register=register_name,
                 derived_from_line_id=None,
                 initial_reading=initial_reading,
-                unit_name=UnitType.kWh,
+                unit_name=UnitType.kwh,
                 price_per_unit=price_per_unit,
                 quantity_source=QuantitySource.fixed_1,
                 quantity_multiplier=Decimal("1.000"),
@@ -1958,7 +1958,7 @@ def upsert_electricity_plan(
         else:
             target.label = label.strip()
             target.initial_reading = initial_reading
-            target.unit_name = UnitType.kWh
+            target.unit_name = UnitType.kwh
             target.price_per_unit = price_per_unit
             target.quantity_source = QuantitySource.fixed_1
             target.quantity_multiplier = Decimal("1.000")

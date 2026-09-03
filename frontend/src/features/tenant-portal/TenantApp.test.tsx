@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "@/App";
 import { api } from "@/shared/api/client";
+import { LanguageProvider } from "@/shared/i18n/provider";
 
 vi.mock("@/shared/api/client", () => ({
   api: vi.fn(),
@@ -135,7 +136,13 @@ beforeEach(() => {
   setupApi();
 });
 
-function renderApp(initialEntries: string[]) {
+async function renderApp(initialEntries: string[]) {
+  // React.lazy()'s first import() call races with jsdom/vitest's microtask
+  // scheduling and can leave the Suspense fallback stuck forever if the chunk
+  // isn't already in the module cache. Warming it up first (module caching
+  // makes the lazy loader's import() resolve synchronously-ish) avoids that.
+  await import("@/features/tenant-portal/TenantApp");
+
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -144,49 +151,59 @@ function renderApp(initialEntries: string[]) {
   });
 
   render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter
-        initialEntries={initialEntries}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <LanguageProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter
+          initialEntries={initialEntries}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </LanguageProvider>,
   );
 }
 
 describe("Tenant flow", () => {
   async function submitLoginForm(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByLabelText("Email"), "tenant@example.com");
+    await user.type(await screen.findByLabelText("Email"), "tenant@example.com");
     await user.type(screen.getByLabelText("Пароль"), "StrongPass1");
     await user.click(screen.getByRole("button", { name: "Увійти" }));
   }
 
-  it("supports login -> dashboard -> history details -> profile", async () => {
-    const user = userEvent.setup();
-    renderApp(["/login"]);
+  // This test walks through the most screens/queries in the file (login ->
+  // dashboard -> history -> details -> profile); the default 5s test timeout
+  // can be tight on a cold first run of this environment, so it gets a
+  // longer budget.
+  it(
+    "supports login -> dashboard -> history details -> profile",
+    async () => {
+      const user = userEvent.setup();
+      await renderApp(["/login"]);
 
-    await submitLoginForm(user);
+      await submitLoginForm(user);
 
-    expect(await screen.findByRole("heading", { name: "Поточний стан" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Лічильник")).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Поточний стан" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Лічильник")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: "Історія" }));
-    expect(await screen.findByRole("button", { name: "Деталі" })).toBeInTheDocument();
+      await user.click(screen.getByRole("link", { name: "Історія" }));
+      expect(await screen.findByRole("button", { name: "Деталі" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Деталі" }));
-    expect(await screen.findByRole("heading", { name: /Рахунок за/ })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Деталі" }));
+      expect(await screen.findByRole("heading", { name: /Рахунок за/ })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: "Профіль" }));
-    expect(await screen.findByText("Email (логін)")).toBeInTheDocument();
-    expect(screen.getByLabelText("Новий пароль")).toBeInTheDocument();
+      await user.click(screen.getByRole("link", { name: "Профіль" }));
+      expect(await screen.findByText("Email (логін)")).toBeInTheDocument();
+      expect(screen.getByLabelText("Новий пароль")).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(mockedApi).toHaveBeenCalledWith("/tenant/login", null, expect.objectContaining({ method: "POST" }));
-      expect(mockedApi).toHaveBeenCalledWith("/tenant/me/dashboard", "tenant-token");
-      expect(mockedApi).toHaveBeenCalledWith("/tenant/me/history", "tenant-token");
-    });
-  });
+      await waitFor(() => {
+        expect(mockedApi).toHaveBeenCalledWith("/tenant/login", null, expect.objectContaining({ method: "POST" }));
+        expect(mockedApi).toHaveBeenCalledWith("/tenant/me/dashboard", "tenant-token");
+        expect(mockedApi).toHaveBeenCalledWith("/tenant/me/history", "tenant-token");
+      });
+    },
+    15000,
+  );
 
   it("shows localized error for invalid credentials", async () => {
     setupApi({
@@ -195,7 +212,7 @@ describe("Tenant flow", () => {
       },
     });
     const user = userEvent.setup();
-    renderApp(["/login"]);
+    await renderApp(["/login"]);
     await submitLoginForm(user);
     expect(await screen.findByText("Невірний email або пароль.")).toBeInTheDocument();
   });
@@ -207,7 +224,7 @@ describe("Tenant flow", () => {
       },
     });
     const user = userEvent.setup();
-    renderApp(["/login"]);
+    await renderApp(["/login"]);
     await submitLoginForm(user);
     expect(await screen.findByText("Кабінет орендаря вимкнений адміністратором.")).toBeInTheDocument();
   });
@@ -215,7 +232,7 @@ describe("Tenant flow", () => {
   it("shows not found state for unknown invoice id", async () => {
     localStorage.setItem("um_tenant_token", "tenant-token");
     localStorage.setItem("um_tenant_refresh_token", "tenant-refresh-token");
-    renderApp(["/history/999"]);
+    await renderApp(["/history/999"]);
     expect(await screen.findByText("Рахунок не знайдено.")).toBeInTheDocument();
   });
 
@@ -233,7 +250,7 @@ describe("Tenant flow", () => {
     });
     localStorage.setItem("um_tenant_token", "tenant-token");
     localStorage.setItem("um_tenant_refresh_token", "tenant-refresh-token");
-    renderApp(["/dashboard"]);
+    await renderApp(["/dashboard"]);
     expect(await screen.findByText("Передача показників наразі вимкнена адміністратором.")).toBeInTheDocument();
   });
 });

@@ -49,6 +49,131 @@ def teardown_module():
         TEST_DB_PATH.unlink()
 
 
+_METER_TYPE_CACHE: dict[str, int] = {}
+
+
+def _get_or_create_meter_type(headers, utility_type: str) -> int:
+    """Meter types are a global catalog now (MeterCreate needs meter_type_id,
+    not the old service_name/utility_type pair), and this module shares one
+    DB across all its tests, so cache by utility_type to avoid recreating /
+    colliding on the same catalog entry."""
+    if utility_type in _METER_TYPE_CACHE:
+        return _METER_TYPE_CACHE[utility_type]
+    resp = client.post(
+        "/admin/meter-types",
+        json={"name": f"{utility_type} meter", "utility_type": utility_type},
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    meter_type_id = resp.json()["id"]
+    _METER_TYPE_CACHE[utility_type] = meter_type_id
+    return meter_type_id
+
+
+_SERVICE_CATALOG_CACHE: dict[str, int] = {}
+
+
+def _get_or_create_service_catalog(
+    headers,
+    code: str,
+    name: str,
+    calculation_kind: str,
+    unit_name: str,
+    requires_meter: bool = False,
+    allowed_meter_utility_type: str | None = None,
+) -> int:
+    """The old flat Tariff/ChargeMode model (POST /admin/tariffs) is gone
+    (410 Gone) - it's now ServiceCatalog (reusable service definition) ->
+    ApartmentServiceConnection (an apartment's subscription to it) ->
+    ConnectionChargeLine (the actual priced/metered line(s), versioned by
+    effective_from/effective_to). Cache catalog entries by code since this
+    module shares one DB across all its tests."""
+    if code in _SERVICE_CATALOG_CACHE:
+        return _SERVICE_CATALOG_CACHE[code]
+    resp = client.post(
+        "/admin/service-catalog",
+        json={
+            "code": code,
+            "name": name,
+            "calculation_kind": calculation_kind,
+            "unit_name": unit_name,
+            "requires_meter": requires_meter,
+            "allowed_meter_utility_type": allowed_meter_utility_type,
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+    catalog_id = resp.json()["id"]
+    _SERVICE_CATALOG_CACHE[code] = catalog_id
+    return catalog_id
+
+
+def _create_tariff(
+    headers,
+    apartment_id: int,
+    *,
+    code: str,
+    name: str,
+    calculation_kind: str,
+    unit_name: str,
+    price_per_unit: str,
+    effective_from: str,
+    meter_id: int | None = None,
+    meter_register: str = "total",
+    initial_reading: str | None = None,
+    allowed_meter_utility_type: str | None = None,
+) -> dict:
+    """Replacement for the old single-call POST /admin/tariffs: creates (or
+    reuses) the service-catalog entry, an ApartmentServiceConnection for this
+    apartment, and one ConnectionChargeLine with the given price/meter,
+    mirroring what the old flat tariff row used to represent. Returns the
+    created charge-line's JSON (id, connection_id, etc.) - id is what old
+    tests referred to as "the tariff".
+    """
+    catalog_id = _get_or_create_service_catalog(
+        headers,
+        code=code,
+        name=name,
+        calculation_kind=calculation_kind,
+        unit_name=unit_name,
+        requires_meter=meter_id is not None,
+        allowed_meter_utility_type=allowed_meter_utility_type,
+    )
+    connection = client.post(
+        "/admin/service-connections",
+        json={
+            "apartment_id": apartment_id,
+            "service_catalog_id": catalog_id,
+            "started_at": effective_from,
+            "status": "active",
+        },
+        headers=headers,
+    )
+    assert connection.status_code == 201, connection.text
+    connection_id = connection.json()["id"]
+
+    line = client.post(
+        f"/admin/service-connections/{connection_id}/charge-lines",
+        json={
+            "line_kind": "meter_register" if meter_id is not None else "fixed",
+            "label": name,
+            "meter_id": meter_id,
+            "meter_register": meter_register,
+            "initial_reading": initial_reading,
+            "unit_name": unit_name,
+            "price_per_unit": price_per_unit,
+            "quantity_source": "fixed_1",
+            "quantity_multiplier": "1",
+            "effective_from": effective_from,
+        },
+        headers=headers,
+    )
+    assert line.status_code == 201, line.text
+    body = line.json()
+    body["connection_id"] = connection_id
+    return body
+
+
 def _tenant_update_payload(**overrides):
     payload = {
         "full_name": "Tenant",
@@ -106,31 +231,29 @@ def test_v1_admin_and_tenant_flow():
         "/admin/meters",
         json={
             "apartment_id": apartment_id,
-            "service_name": "Електроенергія День",
-            "utility_type": "electricity",
+            "meter_type_id": _get_or_create_meter_type(headers, "electricity"),
             "serial_number": "EM-001",
             "initial_reading": "1000",
             "installed_at": "2025-12-01",
         },
         headers=headers,
     )
-    assert meter.status_code == 201
+    assert meter.status_code == 201, meter.text
     meter_id = meter.json()["id"]
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Електроенергія День",
-            "charge_mode": "metered",
-            "utility_type": "electricity",
-            "price_per_unit": "4.5",
-            "unit_name": "kWh",
-            "effective_from": "2026-01-01",
-        },
-        headers=headers,
+    _create_tariff(
+        headers,
+        apartment_id,
+        code="electricity_day",
+        name="Електроенергія День",
+        calculation_kind="metered",
+        unit_name="kWh",
+        price_per_unit="4.5",
+        effective_from="2026-01-01",
+        meter_id=meter_id,
+        initial_reading="1000",
+        allowed_meter_utility_type="electricity",
     )
-    assert tariff.status_code == 201
 
     reading = client.post(
         "/admin/readings",
@@ -186,20 +309,16 @@ def test_apartment_delete_cleans_related_data():
     )
     assert tenancy.status_code == 201
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Квартплата",
-            "charge_mode": "fixed",
-            "utility_type": None,
-            "price_per_unit": "100.00",
-            "unit_name": "month",
-            "effective_from": "2026-02-01",
-        },
-        headers=headers,
+    _create_tariff(
+        headers,
+        apartment_id,
+        code="maintenance_fee",
+        name="Квартплата",
+        calculation_kind="fixed",
+        unit_name="month",
+        price_per_unit="100.00",
+        effective_from="2026-02-01",
     )
-    assert tariff.status_code == 201
 
     remove = client.delete(f"/admin/apartments/{apartment_id}", headers=headers)
     assert remove.status_code == 200
@@ -232,30 +351,36 @@ def test_meter_update_and_delete_flow():
         "/admin/meters",
         json={
             "apartment_id": apartment_id,
-            "service_name": "Вода",
-            "utility_type": "water",
+            "meter_type_id": _get_or_create_meter_type(headers, "water"),
             "serial_number": "W-001",
             "initial_reading": "12.5",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter.status_code == 201
+    assert meter.status_code == 201, meter.text
     meter_id = meter.json()["id"]
+
+    cold_water_type = client.post(
+        "/admin/meter-types",
+        json={"name": "Холодна вода", "utility_type": "water"},
+        headers=headers,
+    )
+    assert cold_water_type.status_code == 201, cold_water_type.text
+    cold_water_type_id = cold_water_type.json()["id"]
 
     updated = client.put(
         f"/admin/meters/{meter_id}",
         json={
-            "service_name": "Холодна вода",
-            "utility_type": "water",
+            "meter_type_id": cold_water_type_id,
             "serial_number": "W-002",
             "initial_reading": "13.0",
             "installed_at": "2026-01-05",
         },
         headers=headers,
     )
-    assert updated.status_code == 200
-    assert updated.json()["service_name"] == "Холодна вода"
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["meter_type_name"] == "Холодна вода"
     assert updated.json()["serial_number"] == "W-002"
 
     listed = client.get(f"/admin/apartments/{apartment_id}/meters", headers=headers)
@@ -290,37 +415,33 @@ def test_meter_delete_conflict_when_bound_to_tariff():
         "/admin/meters",
         json={
             "apartment_id": apartment_id,
-            "service_name": "Електроенергія день",
-            "utility_type": "electricity",
+            "meter_type_id": _get_or_create_meter_type(headers, "electricity"),
             "serial_number": "E-409",
             "initial_reading": "0",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter.status_code == 201
+    assert meter.status_code == 201, meter.text
     meter_id = meter.json()["id"]
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Електроенергія день",
-            "charge_mode": "metered",
-            "utility_type": "electricity",
-            "price_per_unit": "4.5",
-            "unit_name": "kWh",
-            "meter_id": meter_id,
-            "meter_register": "total",
-            "effective_from": "2026-01-01",
-        },
-        headers=headers,
+    _create_tariff(
+        headers,
+        apartment_id,
+        code="electricity_day",
+        name="Електроенергія день",
+        calculation_kind="metered",
+        unit_name="kWh",
+        price_per_unit="4.5",
+        effective_from="2026-01-01",
+        meter_id=meter_id,
+        initial_reading="0",
+        allowed_meter_utility_type="electricity",
     )
-    assert tariff.status_code == 201
 
     remove = client.delete(f"/admin/meters/{meter_id}", headers=headers)
     assert remove.status_code == 409
-    assert "used in tariffs" in remove.json()["detail"]
+    assert "used in service charge lines" in remove.json()["detail"]
 
 
 def test_service_ledger_history_recalculates_balances_from_changed_month():
@@ -527,33 +648,30 @@ def test_meter_replacement_creates_new_meter_and_keeps_history():
         "/admin/meters",
         json={
             "apartment_id": apartment_id,
-            "service_name": "Електроенергія",
-            "utility_type": "electricity",
+            "meter_type_id": _get_or_create_meter_type(headers, "electricity"),
             "serial_number": "E-OLD",
             "initial_reading": "1000",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter.status_code == 201
+    assert meter.status_code == 201, meter.text
     old_meter_id = meter.json()["id"]
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Електроенергія",
-            "charge_mode": "metered",
-            "utility_type": "electricity",
-            "price_per_unit": "4.50",
-            "unit_name": "kWh",
-            "meter_id": old_meter_id,
-            "meter_register": "total",
-            "effective_from": "2026-01-01",
-        },
-        headers=headers,
+    tariff = _create_tariff(
+        headers,
+        apartment_id,
+        code="electricity_single",
+        name="Електроенергія",
+        calculation_kind="metered",
+        unit_name="kWh",
+        price_per_unit="4.50",
+        effective_from="2026-01-01",
+        meter_id=old_meter_id,
+        initial_reading="1000",
+        allowed_meter_utility_type="electricity",
     )
-    assert tariff.status_code == 201
+    connection_id = tariff["connection_id"]
 
     reading = client.post(
         "/admin/readings",
@@ -588,13 +706,19 @@ def test_meter_replacement_creates_new_meter_and_keeps_history():
     assert old_row["retired_at"] == "2026-03-01"
     assert new_row["is_active"] is True
 
-    tariffs_march = client.get(
-        f"/admin/apartments/{apartment_id}/tariffs?year=2026&month=3",
-        headers=headers,
+    # GET /admin/apartments/{id}/tariffs (the old flat-tariff read view) is
+    # gone the same way the write endpoint is; the equivalent check under the
+    # new model is that the connection's charge line covering March 2026 got
+    # rebound to the replacement meter by POST /admin/meters/{id}/replace.
+    connections = client.get(f"/admin/apartments/{apartment_id}/service-connections", headers=headers)
+    assert connections.status_code == 200
+    connection = next(c for c in connections.json() if c["id"] == connection_id)
+    march_line = next(
+        line
+        for line in connection["charge_lines"]
+        if line["effective_from"] <= "2026-03-01" and (line["effective_to"] is None or line["effective_to"] >= "2026-03-01")
     )
-    assert tariffs_march.status_code == 200
-    electricity = next(x for x in tariffs_march.json() if x["service_name"] == "Електроенергія")
-    assert electricity["meter_id"] == new_meter_id
+    assert march_line["meter_id"] == new_meter_id
 
 
 def test_electricity_plan_flow_dual_to_single():
@@ -615,16 +739,32 @@ def test_electricity_plan_flow_dual_to_single():
         "/admin/meters",
         json={
             "apartment_id": apartment_id,
-            "service_name": "Електролічильник",
-            "utility_type": "electricity",
+            "meter_type_id": _get_or_create_meter_type(headers, "electricity"),
             "serial_number": "E-PLAN",
             "initial_reading": "0",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter.status_code == 201
+    assert meter.status_code == 201, meter.text
     meter_id = meter.json()["id"]
+
+    # PUT .../electricity-plan (still live) writes into the same
+    # ServiceCatalog/ApartmentServiceConnection/ConnectionChargeLine model as
+    # everything else, but it specifically looks up a catalog item whose code
+    # is exactly "electricity" - it doesn't create the catalog entry itself.
+    electricity_catalog_id = _get_or_create_service_catalog(
+        headers,
+        code="electricity",
+        # Distinct from the "Електроенергія" catalog name already used by
+        # other tests in this module (ServiceCatalog enforces unique name,
+        # not just unique code).
+        name="Електроенергія (план)",
+        calculation_kind="metered",
+        unit_name="kWh",
+        requires_meter=True,
+        allowed_meter_utility_type="electricity",
+    )
 
     dual = client.put(
         f"/admin/apartments/{apartment_id}/electricity-plan",
@@ -637,16 +777,21 @@ def test_electricity_plan_flow_dual_to_single():
         },
         headers=headers,
     )
-    assert dual.status_code == 200
+    assert dual.status_code == 200, dual.text
 
-    tariffs_jan = client.get(
-        f"/admin/apartments/{apartment_id}/tariffs?year=2026&month=1",
-        headers=headers,
-    )
-    assert tariffs_jan.status_code == 200
-    jan_rows = tariffs_jan.json()
-    assert any(x["service_name"] == "Електроенергія денний тариф" and x["meter_register"] == "day" for x in jan_rows)
-    assert any(x["service_name"] == "Електроенергія нічний тариф" and x["meter_register"] == "night" for x in jan_rows)
+    def _active_lines(period_iso: str) -> list[dict]:
+        connections = client.get(f"/admin/apartments/{apartment_id}/service-connections", headers=headers)
+        assert connections.status_code == 200
+        connection = next(c for c in connections.json() if c["service_catalog_id"] == electricity_catalog_id)
+        return [
+            line
+            for line in connection["charge_lines"]
+            if line["effective_from"] <= period_iso and (line["effective_to"] is None or line["effective_to"] >= period_iso)
+        ]
+
+    jan_lines = _active_lines("2026-01-15")
+    assert any(x["label"] == "Електроенергія денний тариф" and x["meter_register"] == "day" for x in jan_lines)
+    assert any(x["label"] == "Електроенергія нічний тариф" and x["meter_register"] == "night" for x in jan_lines)
 
     single = client.put(
         f"/admin/apartments/{apartment_id}/electricity-plan",
@@ -658,21 +803,13 @@ def test_electricity_plan_flow_dual_to_single():
         },
         headers=headers,
     )
-    assert single.status_code == 200
+    assert single.status_code == 200, single.text
 
-    tariffs_march = client.get(
-        f"/admin/apartments/{apartment_id}/tariffs?year=2026&month=3",
-        headers=headers,
-    )
-    assert tariffs_march.status_code == 200
-    march_rows = tariffs_march.json()
-    single_row = next(x for x in march_rows if x["service_name"] == "Електроенергія")
+    march_lines = _active_lines("2026-03-15")
+    single_row = next(x for x in march_lines if x["label"] == "Електроенергія")
     assert single_row["meter_register"] == "total"
-    assert single_row["is_active_for_period"] is True
-    day_row = next(x for x in march_rows if x["service_name"] == "Електроенергія денний тариф")
-    night_row = next(x for x in march_rows if x["service_name"] == "Електроенергія нічний тариф")
-    assert day_row["is_active_for_period"] is False
-    assert night_row["is_active_for_period"] is False
+    assert not any(x["label"] == "Електроенергія денний тариф" for x in march_lines)
+    assert not any(x["label"] == "Електроенергія нічний тариф" for x in march_lines)
 
 
 def test_tenant_token_lifecycle_refresh_logout_and_revocation():
@@ -945,34 +1082,33 @@ def test_tenant_reading_api_conflict_and_not_found_and_forbidden():
     )
     assert tenancy.status_code == 201
 
+    water_meter_type_id = _get_or_create_meter_type(headers, "water")
     meter_a = client.post(
         "/admin/meters",
         json={
             "apartment_id": apartment_a_id,
-            "service_name": "Вода",
-            "utility_type": "water",
+            "meter_type_id": water_meter_type_id,
             "serial_number": "W-A",
             "initial_reading": "0",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter_a.status_code == 201
+    assert meter_a.status_code == 201, meter_a.text
     meter_a_id = meter_a.json()["id"]
 
     meter_b = client.post(
         "/admin/meters",
         json={
             "apartment_id": apartment_b_id,
-            "service_name": "Вода B",
-            "utility_type": "water",
+            "meter_type_id": water_meter_type_id,
             "serial_number": "W-B",
             "initial_reading": "0",
             "installed_at": "2026-01-01",
         },
         headers=headers,
     )
-    assert meter_b.status_code == 201
+    assert meter_b.status_code == 201, meter_b.text
     meter_b_id = meter_b.json()["id"]
 
     tenant_login = client.post(

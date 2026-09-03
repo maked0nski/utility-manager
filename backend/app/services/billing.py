@@ -124,7 +124,7 @@ def _register_meta(db: Session, meter: Meter | None, year: int, month: int, regi
     return plan_mode, label_map.get(register_name, register_name), registers
 
 
-def _line_quantity(apartment: Apartment, quantity_source: QuantitySource, multiplier: Decimal) -> Decimal:
+def line_quantity(apartment: Apartment, quantity_source: QuantitySource, multiplier: Decimal) -> Decimal:
     base = Decimal("1.000")
     if quantity_source == QuantitySource.registered_residents:
         base = Decimal(apartment.registered_residents or 0)
@@ -266,7 +266,7 @@ def build_connection_charge_rows(db: Session, apartment_id: int, year: int, mont
             can_edit_previous = False
 
             if line.line_kind == ChargeLineKind.fixed:
-                quantity = _line_quantity(apartment, line.quantity_source, Decimal(line.quantity_multiplier))
+                quantity = line_quantity(apartment, line.quantity_source, Decimal(line.quantity_multiplier))
             elif line.line_kind == ChargeLineKind.meter_register and meter is not None:
                 register_name = line.meter_register or "total"
                 readings = readings_by_key.get((meter.id, register_name), [])

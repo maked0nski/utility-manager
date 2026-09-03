@@ -30,6 +30,7 @@ from app.models import (
     MeterReading,
     Provider,
 )
+from app.services.billing import line_quantity
 from app.services.tariff_rules import fixed_charge_multiplier
 
 UK_MONTHS = {
@@ -951,8 +952,13 @@ def _run_atp0928(
                 has_waiting = True
                 message_parts.append("Немає значення для порівняння з тарифом у БД")
             else:
+                current_line_quantity = line_quantity(
+                    apartment, current_line.quantity_source, Decimal(current_line.quantity_multiplier)
+                )
+                if current_line_quantity <= 0:
+                    current_line_quantity = Decimal("1")
                 current_per_person = Decimal(current_line.price_per_unit)
-                current_total = (current_per_person * residents_multiplier).quantize(Decimal("0.01"))
+                current_total = (current_per_person * current_line_quantity).quantize(Decimal("0.01"))
                 candidate_total_rounded = _round_up_to_half(candidate_total_raw).quantize(Decimal("0.01"))
                 setting.auto_check_last_value_raw = candidate_total_raw.quantize(Decimal("0.0001"))
                 setting.auto_check_last_value_rounded = candidate_total_rounded
@@ -969,7 +975,7 @@ def _run_atp0928(
                     message_parts.append(f"Без змін: у БД {current_total} >= {candidate_total_rounded}")
                     setting.auto_check_completed_for_period = True
                 else:
-                    candidate_per_person = (candidate_total_rounded / residents_multiplier).quantize(Decimal("0.0001"))
+                    candidate_per_person = (candidate_total_rounded / current_line_quantity).quantize(Decimal("0.0001"))
                     target_line, _ = _upsert_service_charge_line_price(
                         db,
                         apartment_id=setting.apartment_id,

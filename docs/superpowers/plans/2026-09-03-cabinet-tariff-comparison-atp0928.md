@@ -462,7 +462,7 @@ git commit -m "feat(api): expose cabinet_price_per_unit/cabinet_checked_at on co
 
 **Interfaces:**
 - Consumes: `ConnectionChargeLineItem.cabinet_price_per_unit` / `.cabinet_checked_at` (Task 5), `serviceConnections: ApartmentServiceConnectionItem[]` (already in `DashboardContext`).
-- Produces: `evaluateCabinetTariff(myPrice: number, cabinet: { price: number; checkedAt: string }, now?: Date): { freshness: "fresh" | "stale"; floorViolation: boolean }`.
+- Produces: `evaluateCabinetTariff(myPrice: number, cabinet: { price: number; checkedAt: string }, now?: Date): { freshness: "fresh" | "stale"; floorViolation: boolean; suggestedPrice: number }`.
 
 - [ ] **Step 1: Write the failing test for the pure comparison helper**
 
@@ -498,6 +498,20 @@ describe("evaluateCabinetTariff", () => {
     const result = evaluateCabinetTariff(110, { price: 100, checkedAt }, now);
     expect(result.floorViolation).toBe(false);
   });
+
+  it("suggests cabinet price x 1.10, rounded up to the cent", () => {
+    const checkedAt = now.toISOString();
+    const result = evaluateCabinetTariff(185, { price: 74.9 * 3, checkedAt }, now);
+    // 74.90 * 3 = 224.70; * 1.10 = 247.17 exactly, so ceil-to-cent must not push it to 247.18
+    expect(result.suggestedPrice).toBe(247.17);
+  });
+
+  it("rounds a suggested price up when the floor lands mid-cent", () => {
+    const checkedAt = now.toISOString();
+    const result = evaluateCabinetTariff(50, { price: 33.33, checkedAt }, now);
+    // 33.33 * 1.10 = 36.663 -> must round UP to 36.67, never down to 36.66
+    expect(result.suggestedPrice).toBe(36.67);
+  });
 });
 ```
 
@@ -519,11 +533,18 @@ export interface CabinetTariffInfo {
 export interface CabinetTariffStatus {
   freshness: "fresh" | "stale";
   floorViolation: boolean;
+  suggestedPrice: number;
 }
 
 const FRESHNESS_WINDOW_DAYS = 15;
 const FLOOR_MULTIPLIER = 1.1;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+// Guards against float noise (e.g. 224.7 * 1.1 === 247.17000000000002 in JS)
+// spuriously pushing an exact cent value up to the next one.
+function ceilToCents(value: number): number {
+  return Math.ceil(value * 100 - 1e-9) / 100;
+}
 
 export function evaluateCabinetTariff(
   myPrice: number,
@@ -534,6 +555,7 @@ export function evaluateCabinetTariff(
   return {
     freshness: ageDays <= FRESHNESS_WINDOW_DAYS ? "fresh" : "stale",
     floorViolation: myPrice < cabinet.price * FLOOR_MULTIPLIER,
+    suggestedPrice: ceilToCents(cabinet.price * FLOOR_MULTIPLIER),
   };
 }
 ```
@@ -541,7 +563,7 @@ export function evaluateCabinetTariff(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run (from `frontend/`): `npx vitest run src/features/calculation/cabinet-tariff.test.ts`
-Expected: 4 passed
+Expected: 6 passed
 
 - [ ] **Step 5: Commit the pure helper**
 
@@ -623,15 +645,25 @@ Replace the tariff `<td>` at lines 355-370:
                             Кабінет: {money(cabinet.price)}
                           </span>
                           {status.floorViolation ? (
-                            <span className="status-pill draft" title="Мій тариф має бути не менше ніж на 10% вищим за тариф з кабінету">
-                              ⚠ нижче на 10%+
-                            </span>
+                            <button
+                              type="button"
+                              className="status-pill draft"
+                              title="Мій тариф має бути не менше ніж на 10% вищим за тариф з кабінету. Клік — підставити рекомендоване значення."
+                              onClick={() => {
+                                if (!e) start(r);
+                                setDraft((s) => ({ ...s, unit_price: String(status.suggestedPrice) }));
+                              }}
+                            >
+                              ⚠ нижче на 10%+ · рекомендовано {money(status.suggestedPrice)}
+                            </button>
                           ) : null}
                         </div>
                       );
                     })() : null}
                   </td>
 ```
+
+The suggested-price pill is a real `<button>` (not a `<span>`, unlike the freshness pill) specifically so it's clickable: clicking it enters edit mode for this row (if not already editing) and pre-fills the "Тариф" input with the recommended value, so the admin only has to press "Зберегти" — or adjust it first.
 
 - [ ] **Step 10: Typecheck, lint, and run the full frontend test suite**
 
@@ -672,9 +704,17 @@ Reload "Розрахунок". Expected: the tariff value is identical to Step 1
 
 On the same row, expected: a "Кабінет: X" badge is now visible. If `cabinet_checked_at` is today (it will be, since you just ran it), the badge should be green (`status-pill ok`).
 
-- [ ] **Step 5: Confirm the floor warning behaves correctly**
+- [ ] **Step 5: Confirm the floor warning and suggested price behave correctly**
 
-If the current tariff is less than the cabinet value × 1.10, expected: an additional "⚠ нижче на 10%+" badge appears. If not, temporarily lower the tariff via the existing manual edit (in "Розрахунок", click ✎ on the row) to a value below the floor, save, reload, and confirm the warning appears — then restore the original value.
+As of this plan's writing, "Вивіз сміття" for this apartment is genuinely below the floor
+(185.00 vs. a real cabinet total of ~225.00, city tariff raised to 74.90 грн/особа × 3 as of
+01.09.2026 — see the design spec's context section), so the warning pill should already appear
+with no need to artificially lower the price first. Expected: "⚠ нижче на 10%+ · рекомендовано
+247.17" (74.90 × 3 × 1.10, rounded up to the cent — confirm the exact cabinet total shown in the
+badge and recompute by hand if the live figure differs). Click the pill; expected: the row enters
+edit mode with "Тариф" pre-filled to 247.17. Do not click "Зберегти" unless you (the user) have
+actually decided to raise the tariff now — cancel/reset the edit afterward if this is just a
+verification pass.
 
 - [ ] **Step 6: Confirm the run log message reads correctly**
 

@@ -63,9 +63,9 @@ const slugifyTemplatePart = (value: string) =>
     .replace(/^_+|_+$/g, "")
     .replace(/_+/g, "_");
 
-const buildTemplateCode = (name: string, providerName?: string | null) => {
-  const provider = slugifyTemplatePart(providerName || "provider");
-  const label = slugifyTemplatePart(name || "template");
+const buildTemplateCode = (name: string, providerName?: string | null, providerId?: string | null) => {
+  const provider = slugifyTemplatePart(providerName || "") || (providerId ? `provider_${providerId}` : "provider");
+  const label = slugifyTemplatePart(name || "") || `template_${Date.now()}`;
   return `${provider}_${label}`;
 };
 
@@ -626,6 +626,7 @@ export function AutomationsTab({
       buildTemplateCode(
         templateForm.name.trim(),
         providers.find((provider) => String(provider.id) === templateForm.provider_id)?.name_full,
+        templateForm.provider_id || null,
       );
     const payload = {
       code: generatedCode,

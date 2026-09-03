@@ -1,3 +1,5 @@
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +11,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.core.auth import hash_password
-from app.models import AdminUser
+from app.models import AdminUser, ConnectionChargeLine, Role
 
 TEST_DB_PATH = Path("test_utility_manager.db")
 TEST_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
@@ -1173,3 +1175,116 @@ def test_tenant_reading_api_conflict_and_not_found_and_forbidden():
     )
     assert conflict.status_code == 409
     assert "archived" in conflict.json()["detail"].lower()
+
+
+def test_service_connections_endpoint_includes_cabinet_tariff_fields():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Cabinet tariff round-trip address"},
+        headers=headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    catalog_id = _get_or_create_service_catalog(
+        headers, "cabinet_rt_waste", "Cabinet RT Waste", "fixed", "month"
+    )
+    connection = client.post(
+        "/admin/service-connections",
+        json={
+            "apartment_id": apartment_id,
+            "service_catalog_id": catalog_id,
+            "started_at": "2024-01-01",
+            "status": "active",
+        },
+        headers=headers,
+    )
+    assert connection.status_code == 201, connection.text
+    connection_id = connection.json()["id"]
+
+    charge_line = client.post(
+        f"/admin/service-connections/{connection_id}/charge-lines",
+        json={
+            "line_kind": "fixed",
+            "label": "Основний тариф",
+            "unit_name": "month",
+            "price_per_unit": "185.00",
+            "quantity_source": "fixed_1",
+            "quantity_multiplier": "1.000",
+            "effective_from": "2024-01-01",
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert charge_line.status_code == 201, charge_line.text
+    line_id = charge_line.json()["id"]
+
+    db = TestingSessionLocal()
+    line = db.get(ConnectionChargeLine, line_id)
+    line.cabinet_price_per_unit = Decimal("225.0000")
+    line.cabinet_checked_at = datetime(2026, 9, 3, 15, 24, 49)
+    db.commit()
+    db.close()
+
+    listed = client.get(f"/admin/apartments/{apartment_id}/service-connections", headers=headers)
+    assert listed.status_code == 200
+    listed_line = listed.json()[0]["charge_lines"][0]
+    assert listed_line["cabinet_price_per_unit"] == "225.0000"
+    assert listed_line["cabinet_checked_at"] is not None
+
+
+def test_cabinet_password_reveal_requires_write_access():
+    login = client.post("/auth/admin/login", json={"username": "admin", "password": "admin123"})
+    assert login.status_code == 200
+    admin_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    db = TestingSessionLocal()
+    if db.query(AdminUser).filter(AdminUser.username == "readonly_test").first() is None:
+        db.add(AdminUser(username="readonly_test", password_hash=hash_password("readonly123"), role=Role.read_only))
+        db.commit()
+    db.close()
+    readonly_login = client.post(
+        "/auth/admin/login", json={"username": "readonly_test", "password": "readonly123"}
+    )
+    assert readonly_login.status_code == 200
+    readonly_headers = {"Authorization": f"Bearer {readonly_login.json()['access_token']}"}
+
+    template = client.post(
+        "/admin/automation-templates",
+        json={"code": f"cabinet-pw-test-{uuid4().hex[:8]}", "name": "Cabinet PW Test Template"},
+        headers=admin_headers,
+    )
+    assert template.status_code == 201, template.text
+    template_id = template.json()["id"]
+
+    apartment = client.post(
+        "/admin/apartments",
+        json={"code": f"A-{uuid4().hex[:8].upper()}", "address": "Cabinet password reveal address"},
+        headers=admin_headers,
+    )
+    assert apartment.status_code == 201
+    apartment_id = apartment.json()["id"]
+
+    automation = client.put(
+        f"/admin/apartments/{apartment_id}/automations",
+        json={"apartment_id": apartment_id, "template_id": template_id, "cabinet_password": "SuperSecret123"},
+        headers=admin_headers,
+    )
+    assert automation.status_code == 200, automation.text
+    automation_id = automation.json()["id"]
+
+    listed = client.get(f"/admin/apartments/{apartment_id}/automations", headers=admin_headers)
+    assert listed.status_code == 200
+    assert "cabinet_password" not in listed.json()[0]
+    assert listed.json()[0]["cabinet_password_set"] is True
+
+    forbidden = client.get(f"/admin/automations/{automation_id}/cabinet-password", headers=readonly_headers)
+    assert forbidden.status_code == 403
+
+    revealed = client.get(f"/admin/automations/{automation_id}/cabinet-password", headers=admin_headers)
+    assert revealed.status_code == 200
+    assert revealed.json()["cabinet_password"] == "SuperSecret123"

@@ -80,7 +80,11 @@ export function useBillingActions({
       ) {
         throw new Error(`Поточний показник не може бути меншим за попередній (${row.previous_reading}).`);
       }
-      if (row.line_id && draft.unit_price !== undefined) {
+      if (
+        row.line_id &&
+        draft.unit_price !== undefined &&
+        Number(draft.unit_price) !== Number(row.unit_price)
+      ) {
         await api(`/admin/charge-lines/${row.line_id}/apply-from-period`, tok, {
           method: "POST",
           body: JSON.stringify({

@@ -53,10 +53,15 @@ def test_parse_vodokanal_tariffs_from_dashboard_cards():
       <div class="card-body"><ul><li>Тариф: 24.67 грн/м<sup>3</sup></li></ul></div>
     </div>
     """
+    # _parse_vodokanal_tariffs is keyed by internal service_code
+    # ("water_supply", "sewage", "water_subscription"), matching its real
+    # caller in tariff_auto_check.py (`parsed_tariffs.get(service_code)`,
+    # with the Ukrainian label derived separately via
+    # VODOKANAL_SERVICE_LABELS) - not by the Ukrainian label itself.
     parsed = _parse_vodokanal_tariffs(html)
-    assert parsed["Водопостачання"] == Decimal("12.95")
-    assert parsed["Водовідведення"] == Decimal("15.29")
-    assert parsed["Абонентська плата (водоканал)"] == Decimal("24.67")
+    assert parsed["water_supply"] == Decimal("12.95")
+    assert parsed["sewage"] == Decimal("15.29")
+    assert parsed["water_subscription"] == Decimal("24.67")
 
 
 def test_parse_atp0928_accrued_from_html_table():
@@ -79,8 +84,13 @@ def test_parse_atp0928_tariff_from_html_prefers_apartment_row():
       <tr><td>Управління побутовими відходами для мешканців житлових будинків індивідуальної забудови</td><td>грн/ людину в місяць</td><td>61,72</td></tr>
     </table>
     """
-    assert _parse_atp0928_tariff_from_html(html, "Вивіз сміття") == Decimal("59.88")
-    assert _parse_atp0928_tariff_from_html(html, "Вивіз сміття (приватний сектор)") == Decimal("61.72")
+    # service_code is always the short internal ServiceCatalog.code slug
+    # (e.g. "waste", "water_supply"), never the Ukrainian display label - see
+    # its real caller at tariff_auto_check.py:913 (`setting.service_code`,
+    # populated from `connection.service_catalog.code`). The "private
+    # sector" branch checks for {"waste_private", "waste_individual"}.
+    assert _parse_atp0928_tariff_from_html(html, "waste") == Decimal("59.88")
+    assert _parse_atp0928_tariff_from_html(html, "waste_private") == Decimal("61.72")
 
 
 def test_round_up_to_half_for_atp0928_update_rule():

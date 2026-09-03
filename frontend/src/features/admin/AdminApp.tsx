@@ -18,10 +18,13 @@ import { useModalState } from "@/features/layout/hooks/use-modal-state";
 import { useDashboardData } from "@/features/dashboard/hooks/use-dashboard-data";
 import { useDashboardStateSync } from "@/features/dashboard/hooks/use-dashboard-state-sync";
 import { useSortedRows } from "@/features/calculation/hooks/use-sorted-rows";
+import { useElectricityPlanActions } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import { usePropertyActions } from "@/features/properties/hooks/use-property-actions";
 import { useMeterActions } from "@/features/properties/hooks/use-meter-actions";
 import { useEquipmentActions } from "@/features/properties/hooks/use-equipment-actions";
 import { PropertyDrawer } from "@/features/properties/components/PropertyDrawer";
+import { Modal } from "@/shared/ui/modal";
+import { ProvidersTab } from "@/features/providers/components/ProvidersTab";
 import { DashboardContent } from "@/features/layout/components/DashboardContent";
 import { AppModals } from "@/features/layout/components/AppModals";
 import { ProfileSettingsModal } from "@/features/layout/components/ProfileSettingsModal";
@@ -117,6 +120,8 @@ export function AdminApp() {
     setPwdModal,
     adminsModal,
     setAdminsModal,
+    catalogsModal,
+    setCatalogsModal,
     toasts,
     setToasts,
     confirm,
@@ -238,6 +243,19 @@ export function AdminApp() {
   });
   const { sortedRows, toggleSort, sortIcon, resetSortDefault } = useSortedRows(detail?.rows || []);
   const meters = detailBundleQuery.data?.meters || [];
+  const {
+    electricityPlanForm,
+    setElectricityPlanForm,
+    electricityMeters,
+    saveElectricityPlan,
+  } = useElectricityPlanActions({
+    tok,
+    apartmentId: sel?.apartment_id,
+    period: p,
+    meters,
+    pushToast,
+    reload,
+  });
   const automationsQuery = useQuery({
     queryKey: ["admin", "automations", tok],
     enabled: !!tok,
@@ -1122,9 +1140,31 @@ export function AdminApp() {
         boot={boot}
         onOpenDrawer={() => setDrawer(true)}
         onOpenAdmins={() => setAdminsModal(true)}
+        onOpenCatalogs={() => setCatalogsModal(true)}
         onOpenSettings={() => setProfileSettingsOpen(true)}
         onLogout={out}
       />
+      {catalogsModal ? (
+        <Modal title="Довідники (спільні для всіх об'єктів)" onClose={() => setCatalogsModal(false)}>
+          <p className="helper">
+            Зміни тут впливають на всі об&apos;єкти нерухомості, а не лише на обраний зараз.
+          </p>
+          <ProvidersTab
+            providers={providersQuery.data || []}
+            meterTypes={meterTypesQuery.data || []}
+            serviceCatalog={serviceCatalogQuery.data || []}
+            createProvider={createProvider}
+            updateProvider={updateProvider}
+            deleteProvider={deleteProvider}
+            createMeterType={createMeterType}
+            updateMeterType={updateMeterType}
+            deleteMeterType={deleteMeterType}
+            createServiceCatalogItem={createServiceCatalogItem}
+            updateServiceCatalogItem={updateServiceCatalogItem}
+            deleteServiceCatalogItem={deleteServiceCatalogItem}
+          />
+        </Modal>
+      ) : null}
       {profileSettingsOpen ? (
         <ProfileSettingsModal
           username={boot.username}
@@ -1274,15 +1314,10 @@ export function AdminApp() {
         createServiceConnection={createServiceConnection}
         updateServiceConnection={updateServiceConnection}
         deleteServiceConnection={deleteServiceConnection}
-        createProvider={createProvider}
-        updateProvider={updateProvider}
-        deleteProvider={deleteProvider}
-        createMeterType={createMeterType}
-        updateMeterType={updateMeterType}
-        deleteMeterType={deleteMeterType}
-        createServiceCatalogItem={createServiceCatalogItem}
-        updateServiceCatalogItem={updateServiceCatalogItem}
-        deleteServiceCatalogItem={deleteServiceCatalogItem}
+        electricityPlanForm={electricityPlanForm}
+        setElectricityPlanForm={setElectricityPlanForm}
+        electricityMeters={electricityMeters}
+        saveElectricityPlan={saveElectricityPlan}
         meterForm={meterForm}
         setMeterForm={setMeterForm}
         editingMeterId={editingMeterId}

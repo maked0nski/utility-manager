@@ -146,9 +146,13 @@
 
 .dashboard-kpi-strip {
   margin: 8px 0 10px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   gap: 10px;
+}
+
+.dashboard-live-strip-label {
+  margin: 4px 0 2px;
 }
 
 .dashboard-live-strip {

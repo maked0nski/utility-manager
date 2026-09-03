@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { In, Se, Ta } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
+import { dt, unitLabel } from "@/shared/utils/format";
+import { todayIso } from "@/shared/utils/date";
+import type { ElectricityPlanForm } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import type {
   ApartmentServiceConnectionItem,
   ChargeLineKind,
@@ -211,6 +215,10 @@ export function ObjectServicesTab({
   onCreateConnection,
   onUpdateConnection,
   onDeleteConnection,
+  electricityPlanForm,
+  setElectricityPlanForm,
+  electricityMeters,
+  saveElectricityPlan,
 }: {
   services: ServiceCatalogItem[];
   connections: ApartmentServiceConnectionItem[];
@@ -240,15 +248,29 @@ export function ObjectServicesTab({
     },
   ) => Promise<void>;
   onDeleteConnection: (connectionId: number) => Promise<void>;
+  electricityPlanForm: ElectricityPlanForm;
+  setElectricityPlanForm: Dispatch<SetStateAction<ElectricityPlanForm>>;
+  electricityMeters: MeterItem[];
+  saveElectricityPlan: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [editingConnectionId, setEditingConnectionId] = useState<number | null>(null);
   const [expandedConnectionId, setExpandedConnectionId] = useState<number | null>(null);
   const [form, setForm] = useState<ConnectionEditorForm>(buildDefaultForm());
+  const [electricityPlanOpen, setElectricityPlanOpen] = useState(false);
+  const [showLineHistory, setShowLineHistory] = useState(false);
 
   const serviceMap = useMemo(() => new Map(services.map((item) => [item.id, item])), [services]);
   const providerMap = useMemo(() => new Map(providers.map((item) => [item.id, item])), [providers]);
   const meterMap = useMemo(() => new Map(meters.map((item) => [item.id, item])), [meters]);
+
+  const today = todayIso();
+  const activeLineEntries: Array<{ line: EditableChargeLine; index: number }> = [];
+  const historicalLineEntries: Array<{ line: EditableChargeLine; index: number }> = [];
+  form.charge_lines.forEach((line, index) => {
+    const isHistorical = !!line.effective_to && line.effective_to < today;
+    (isHistorical ? historicalLineEntries : activeLineEntries).push({ line, index });
+  });
 
   const selectedService = services.find((item) => String(item.id) === form.service_catalog_id) || null;
   const requiredDerivedService = selectedService?.derived_from_service_id
@@ -347,6 +369,7 @@ export function ObjectServicesTab({
 
   const openEdit = (connection: ApartmentServiceConnectionItem) => {
     setEditingConnectionId(connection.id);
+    setShowLineHistory(false);
     setForm({
       service_catalog_id: String(connection.service_catalog_id),
       provider_id: connection.provider_id ? String(connection.provider_id) : "",
@@ -472,6 +495,105 @@ export function ObjectServicesTab({
     closeModal();
   };
 
+  const renderChargeLineEditor = (line: EditableChargeLine, index: number) => (
+    <div key={`${line.label}-${index}`} className={`service-line-editor ${lineToneClass(line)}`}>
+      <div className="service-line-editor-toolbar">
+        <div className="service-line-title">
+          <strong>{line.label || `Рядок ${index + 1}`}</strong>
+          <span className="helper">
+            {line.line_kind === "meter_register"
+              ? METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"
+              : line.line_kind === "derived"
+                ? "Обсяг береться з іншої послуги"
+                : "Розрахунок без показників лічильника"}
+          </span>
+        </div>
+        <div className="row-actions">
+          <span className="status-pill">{lineKindLabel(line.line_kind)}</span>
+        </div>
+      </div>
+      <div className="forms-grid compact-grid">
+        <In
+          label="Назва рядка"
+          tip="Назва рядка"
+          help={canEditLineLabels ? "Як цей рядок буде показаний у списках і розрахунку." : "Для електроенергії назва рядка формується автоматично."}
+          value={line.label}
+          onChange={(e) => updateLine(index, { label: e.target.value })}
+          disabled={!canEditLineLabels}
+        />
+        <In label="Ціна" tip="Ціна" type="number" help="Вартість одиниці для цього рядка." value={line.price_per_unit} onChange={(e) => updateLine(index, { price_per_unit: e.target.value })} />
+        <In
+          label="Одиниця тарифу"
+          tip="Одиниця тарифу"
+          help="Одиниця береться з довідника послуг."
+          value={line.unit_name}
+          onChange={(e) => updateLine(index, { unit_name: e.target.value })}
+          disabled
+        />
+        <In
+          label="Діє з"
+          tip="Діє з"
+          type="date"
+          value={line.effective_from}
+          onChange={(e) => updateLine(index, { effective_from: e.target.value })}
+          disabled
+        />
+        {line.line_kind === "meter_register" ? (
+          <>
+            <Se label="Лічильник" tip="Лічильник" help="Фізичний лічильник об'єкта, з якого береться споживання." value={line.meter_id} onChange={(e) => updateLine(index, { meter_id: e.target.value })}>
+              <option value="">Оберіть лічильник</option>
+              {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</option>)}
+            </Se>
+            <In
+              label="Початковий показник"
+              tip="Початковий показник"
+              type="number"
+              min="0"
+              step="0.001"
+              help="Стартове значення для цього рядка послуги. Воно використовується як база до першого місячного показника."
+              value={line.initial_reading}
+              onChange={(e) => updateLine(index, { initial_reading: e.target.value })}
+            />
+          </>
+        ) : null}
+        {line.line_kind === "derived" ? (
+          <Se label="Брати обсяг з" tip="Брати обсяг з" help="Оберіть рядок-джерело для похідної послуги." value={line.derived_from_line_id} onChange={(e) => updateLine(index, { derived_from_line_id: e.target.value })}>
+            <option value="">
+              {requiredDerivedService
+                ? `Спочатку підключіть "${requiredDerivedService.name}"`
+                : "Оберіть послугу-джерело"}
+            </option>
+            {derivedSourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </Se>
+        ) : null}
+        {line.line_kind === "fixed" ? (
+          <Se label="База множення" tip="База множення" help="Фіксована, від площі або від кількості прописаних." value={line.quantity_source} onChange={(e) => updateLine(index, { quantity_source: e.target.value as QuantitySource })}>
+            <option value="fixed_1">{QUANTITY_SOURCE_LABELS.fixed_1}</option>
+            <option value="registered_residents">{QUANTITY_SOURCE_LABELS.registered_residents}</option>
+            <option value="area_m2">{QUANTITY_SOURCE_LABELS.area_m2}</option>
+          </Se>
+        ) : (
+          <In
+            label="База множення"
+            tip="База множення"
+            value={QUANTITY_SOURCE_LABELS[line.quantity_source]}
+            onChange={() => {}}
+            disabled
+          />
+        )}
+        <In
+          label="Множник"
+          tip="Множник"
+          type="number"
+          help="Для більшості послуг лишається 1."
+          value={line.quantity_multiplier}
+          onChange={(e) => updateLine(index, { quantity_multiplier: e.target.value })}
+          disabled={line.line_kind !== "fixed"}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="property-sections">
       <div className="subcard">
@@ -522,15 +644,15 @@ export function ObjectServicesTab({
                 <div className="service-connection-head">
                   <div>
                     <strong>{service?.name || `Послуга #${connection.service_catalog_id}`}</strong>
-                    <div className="helper">{CALCULATION_KIND_LABELS[service?.calculation_kind || "fixed"]} • {service?.unit_name || "—"}</div>
+                    <div className="helper">{CALCULATION_KIND_LABELS[service?.calculation_kind || "fixed"]} • {service?.unit_name ? unitLabel(service.unit_name) : "—"}</div>
                   </div>
                   <span className={`status-pill ${connection.status === "active" ? "ok" : "draft"}`}>{connectionStatusLabel(connection.status)}</span>
                 </div>
                 <div className="service-connection-meta">
                   <span>Постачальник: <strong>{provider?.name_full || "Не задано"}</strong></span>
                   <span>Особовий рахунок: <strong>{connection.personal_account || "—"}</strong></span>
-                  <span>Діє з: <strong>{connection.started_at}</strong></span>
-                  <span>Завершення: <strong>{connection.ended_at || "без дати"}</strong></span>
+                  <span>Діє з: <strong>{dt(connection.started_at)}</strong></span>
+                  <span>Завершення: <strong>{connection.ended_at ? dt(connection.ended_at) : "без дати"}</strong></span>
                 </div>
                 <div className="service-connection-overview">
                   <span>Рядків: <strong>{connection.charge_lines.length}</strong></span>
@@ -547,7 +669,7 @@ export function ObjectServicesTab({
                         <div key={line.id} className={`service-line-chip ${lineToneClass(line)}`}>
                           <strong>{line.label}</strong>
                           {line.line_kind === "meter_register" ? <span>{METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"}</span> : null}
-                          <span>Ціна: {line.price_per_unit} / {line.unit_name}</span>
+                          <span>Ціна: {line.price_per_unit} / {unitLabel(line.unit_name)}</span>
                           <span>Логіка: {lineKindLabel(line.line_kind)}</span>
                           {meter ? <span>Лічильник: {(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</span> : null}
                           {line.line_kind === "meter_register" ? (
@@ -572,6 +694,11 @@ export function ObjectServicesTab({
                   </button>
                   <button className="secondary" onClick={() => openEdit(connection)}>Редагувати</button>
                   <button className="danger" onClick={async () => { if (!window.confirm("Видалити це підключення послуги?")) return; await onDeleteConnection(connection.id); }}>Видалити</button>
+                  {service?.code === "electricity" ? (
+                    <button className="secondary" onClick={() => setElectricityPlanOpen(true)}>
+                      Змінити тарифний план
+                    </button>
+                  ) : null}
                 </div>
               </div>
             );
@@ -583,6 +710,172 @@ export function ObjectServicesTab({
         <h4>Поточна логіка</h4>
         <p className="helper">Первинне налаштування послуги, лічильника, тарифу і початкового показника виконується тут. Вкладка Розрахунок призначена вже для помісячної роботи з показниками та сумами.</p>
       </div>
+
+      {electricityPlanOpen ? (
+        <Modal title="Змінити тарифний план електрики" onClose={() => setElectricityPlanOpen(false)}>
+          <p className="helper">
+            Швидке перемикання режиму: однотарифний / день-ніч / 3-зонний. Створює або оновлює відповідні рядки
+            розрахунку для обраного лічильника з дати дії нижче.
+          </p>
+          <div className="forms-grid compact-grid">
+            <Se
+              label="Режим тарифу"
+              value={electricityPlanForm.plan_mode}
+              onChange={(e) =>
+                setElectricityPlanForm((s) => ({ ...s, plan_mode: e.target.value as ElectricityPlanForm["plan_mode"] }))
+              }
+            >
+              <option value="single">Однотарифний</option>
+              <option value="day_night">День / Ніч</option>
+              <option value="tri_zone">3-зонний (пік/напівпік/ніч)</option>
+            </Se>
+            <Se
+              label="Електролічильник"
+              value={electricityPlanForm.meter_id}
+              onChange={(e) => setElectricityPlanForm((s) => ({ ...s, meter_id: e.target.value }))}
+            >
+              <option value="">Оберіть лічильник</option>
+              {electricityMeters.map((meter) => (
+                <option key={meter.id} value={meter.id}>
+                  {meter.display_name || meter.meter_type_name || "Лічильник"}
+                  {meter.serial_number ? ` (${meter.serial_number})` : ""}
+                </option>
+              ))}
+            </Se>
+            <In
+              label="Діє з"
+              type="date"
+              value={electricityPlanForm.effective_from}
+              onChange={(e) => setElectricityPlanForm((s) => ({ ...s, effective_from: e.target.value }))}
+            />
+          </div>
+
+          {electricityPlanForm.plan_mode === "single" ? (
+            <div className="forms-grid compact-grid top-gap">
+              <In
+                label="Тариф, грн/кВт·год"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.single_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, single_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.single_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, single_initial_reading: e.target.value }))}
+              />
+            </div>
+          ) : null}
+
+          {electricityPlanForm.plan_mode === "day_night" ? (
+            <div className="forms-grid compact-grid top-gap">
+              <In
+                label="Денний тариф, грн/кВт·год"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.day_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, day_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Денний стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.day_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, day_initial_reading: e.target.value }))}
+              />
+              <In
+                label="Нічний тариф, грн/кВт·год"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.night_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, night_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Нічний стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.night_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, night_initial_reading: e.target.value }))}
+              />
+            </div>
+          ) : null}
+
+          {electricityPlanForm.plan_mode === "tri_zone" ? (
+            <div className="forms-grid compact-grid top-gap">
+              <In
+                label="Піковий тариф"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.peak_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, peak_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Піковий стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.peak_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, peak_initial_reading: e.target.value }))}
+              />
+              <In
+                label="Напівпіковий тариф"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.semi_peak_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, semi_peak_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Напівпіковий стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.semi_peak_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, semi_peak_initial_reading: e.target.value }))}
+              />
+              <In
+                label="Нічний тариф"
+                type="number"
+                min="0"
+                step="0.01"
+                value={electricityPlanForm.off_peak_price_per_unit}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, off_peak_price_per_unit: e.target.value }))}
+              />
+              <In
+                label="Нічний стартовий показник"
+                type="number"
+                min="0"
+                step="0.001"
+                value={electricityPlanForm.off_peak_initial_reading}
+                onChange={(e) => setElectricityPlanForm((s) => ({ ...s, off_peak_initial_reading: e.target.value }))}
+              />
+            </div>
+          ) : null}
+
+          <div className="row-actions top-gap">
+            <button
+              onClick={async () => {
+                await saveElectricityPlan();
+                setElectricityPlanOpen(false);
+              }}
+            >
+              Зберегти план
+            </button>
+            <button className="secondary" onClick={() => setElectricityPlanOpen(false)}>
+              Скасувати
+            </button>
+          </div>
+        </Modal>
+      ) : null}
 
       {open ? (
         <Modal title={editingConnectionId ? "Редагувати послугу об'єкта" : "Підключити послугу"} onClose={closeModal}>
@@ -612,7 +905,7 @@ export function ObjectServicesTab({
                 <h4>Логіка послуги</h4>
                 <div className="service-connection-meta">
                   <span>Тип: <strong>{CALCULATION_KIND_LABELS[selectedService.calculation_kind]}</strong></span>
-                  <span>Одиниця: <strong>{selectedService.unit_name}</strong></span>
+                  <span>Одиниця: <strong>{unitLabel(selectedService.unit_name)}</strong></span>
                   <span>Лічильник: <strong>{selectedService.requires_meter ? selectedService.allowed_meter_utility_type ? UTILITY_TYPE_LABELS[selectedService.allowed_meter_utility_type] : "так" : "не потрібен"}</strong></span>
                   <span>Рекомендований ресурс постачальника: <strong>{selectedService.default_provider_utility_type ? UTILITY_TYPE_LABELS[selectedService.default_provider_utility_type] : "не задано"}</strong></span>
                 </div>
@@ -661,106 +954,35 @@ export function ObjectServicesTab({
                 </div>
               </div>
               <div className="service-line-editor-list">
-                {form.charge_lines.map((line, index) => (
-                  <div key={`${line.label}-${index}`} className={`service-line-editor ${lineToneClass(line)}`}>
-                    <div className="service-line-editor-toolbar">
-                      <div className="service-line-title">
-                        <strong>{line.label || `Рядок ${index + 1}`}</strong>
-                        <span className="helper">
-                          {line.line_kind === "meter_register"
-                            ? METER_REGISTER_LABELS[line.meter_register] || "Реєстр лічильника"
-                            : line.line_kind === "derived"
-                              ? "Обсяг береться з іншої послуги"
-                              : "Розрахунок без показників лічильника"}
-                        </span>
-                      </div>
-                      <div className="row-actions">
-                        <span className="status-pill">{lineKindLabel(line.line_kind)}</span>
-                      </div>
-                    </div>
-                    <div className="forms-grid compact-grid">
-                      <In
-                        label="Назва рядка"
-                        tip="Назва рядка"
-                        help={canEditLineLabels ? "Як цей рядок буде показаний у списках і розрахунку." : "Для електроенергії назва рядка формується автоматично."}
-                        value={line.label}
-                        onChange={(e) => updateLine(index, { label: e.target.value })}
-                        disabled={!canEditLineLabels}
-                      />
-                      <In label="Ціна" tip="Ціна" type="number" help="Вартість одиниці для цього рядка." value={line.price_per_unit} onChange={(e) => updateLine(index, { price_per_unit: e.target.value })} />
-                      <In
-                        label="Одиниця тарифу"
-                        tip="Одиниця тарифу"
-                        help="Одиниця береться з довідника послуг."
-                        value={line.unit_name}
-                        onChange={(e) => updateLine(index, { unit_name: e.target.value })}
-                        disabled
-                      />
-                      <In
-                        label="Діє з"
-                        tip="Діє з"
-                        type="date"
-                        value={line.effective_from}
-                        onChange={(e) => updateLine(index, { effective_from: e.target.value })}
-                        disabled
-                      />
-                      {line.line_kind === "meter_register" ? (
-                        <>
-                          <Se label="Лічильник" tip="Лічильник" help="Фізичний лічильник об'єкта, з якого береться споживання." value={line.meter_id} onChange={(e) => updateLine(index, { meter_id: e.target.value })}>
-                            <option value="">Оберіть лічильник</option>
-                            {compatibleMeters.map((meter) => <option key={meter.id} value={meter.id}>{(meter.display_name || meter.meter_type_name || "Лічильник")}{meter.serial_number ? ` (${meter.serial_number})` : ""}</option>)}
-                          </Se>
-                          <In
-                            label="Початковий показник"
-                            tip="Початковий показник"
-                            type="number"
-                            min="0"
-                            step="0.001"
-                            help="Стартове значення для цього рядка послуги. Воно використовується як база до першого місячного показника."
-                            value={line.initial_reading}
-                            onChange={(e) => updateLine(index, { initial_reading: e.target.value })}
-                          />
-                        </>
-                      ) : null}
-                      {line.line_kind === "derived" ? (
-                        <Se label="Брати обсяг з" tip="Брати обсяг з" help="Оберіть рядок-джерело для похідної послуги." value={line.derived_from_line_id} onChange={(e) => updateLine(index, { derived_from_line_id: e.target.value })}>
-                          <option value="">
-                            {requiredDerivedService
-                              ? `Спочатку підключіть "${requiredDerivedService.name}"`
-                              : "Оберіть послугу-джерело"}
-                          </option>
-                          {derivedSourceOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-                        </Se>
-                      ) : null}
-                      {line.line_kind === "fixed" ? (
-                        <Se label="База множення" tip="База множення" help="Фіксована, від площі або від кількості прописаних." value={line.quantity_source} onChange={(e) => updateLine(index, { quantity_source: e.target.value as QuantitySource })}>
-                          <option value="fixed_1">{QUANTITY_SOURCE_LABELS.fixed_1}</option>
-                          <option value="registered_residents">{QUANTITY_SOURCE_LABELS.registered_residents}</option>
-                          <option value="area_m2">{QUANTITY_SOURCE_LABELS.area_m2}</option>
-                        </Se>
-                      ) : (
-                        <In
-                          label="База множення"
-                          tip="База множення"
-                          value={QUANTITY_SOURCE_LABELS[line.quantity_source]}
-                          onChange={() => {}}
-                          disabled
-                        />
-                      )}
-                      <In
-                        label="Множник"
-                        tip="Множник"
-                        type="number"
-                        help="Для більшості послуг лишається 1."
-                        value={line.quantity_multiplier}
-                        onChange={(e) => updateLine(index, { quantity_multiplier: e.target.value })}
-                        disabled={line.line_kind !== "fixed"}
-                      />
-                    </div>
-                  </div>
-                ))}
+                {activeLineEntries.length === 0 ? (
+                  <p className="helper">Активних рядків немає.</p>
+                ) : (
+                  activeLineEntries.map(({ line, index }) => renderChargeLineEditor(line, index))
+                )}
               </div>
             </div>
+
+            {historicalLineEntries.length > 0 ? (
+              <div className="subcard">
+                <div className="header-tools">
+                  <div>
+                    <h4>Історія тарифів ({historicalLineEntries.length})</h4>
+                    <p className="helper">
+                      Рядки з датою дії в минулому. Вони більше не впливають на поточний розрахунок, але
+                      лишаються для коректного перерахунку старих місяців.
+                    </p>
+                  </div>
+                  <button type="button" className="secondary" onClick={() => setShowLineHistory((current) => !current)}>
+                    {showLineHistory ? "Сховати історію" : "Показати історію"}
+                  </button>
+                </div>
+                {showLineHistory ? (
+                  <div className="service-line-editor-list">
+                    {historicalLineEntries.map(({ line, index }) => renderChargeLineEditor(line, index))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="automation-window-preview">
               <strong>Примітка:</strong> якщо послуга рахується за лічильником, початковий показник задається саме тут, у рядку розрахунку послуги. У вкладці Розрахунок надалі вносяться вже поточні місячні показники.

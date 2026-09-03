@@ -8,6 +8,7 @@ export function useModalState() {
   const [payModal, setPayModal] = useState(false);
   const [pwdModal, setPwdModal] = useState(false);
   const [adminsModal, setAdminsModal] = useState(false);
+  const [catalogsModal, setCatalogsModal] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState>({ open: false, title: "", message: "" });
 
@@ -24,6 +25,8 @@ export function useModalState() {
     setPwdModal,
     adminsModal,
     setAdminsModal,
+    catalogsModal,
+    setCatalogsModal,
     toasts,
     setToasts,
     confirm,

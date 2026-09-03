@@ -5,12 +5,14 @@ export function AdminHeader({
   boot,
   onOpenDrawer,
   onOpenAdmins,
+  onOpenCatalogs,
   onOpenSettings,
   onLogout,
 }: {
   boot: { must_change_password: boolean; password_rotation_recommended?: boolean };
   onOpenDrawer: () => void;
   onOpenAdmins: () => void;
+  onOpenCatalogs: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
 }) {
@@ -30,6 +32,9 @@ export function AdminHeader({
           </button>
           <button className="hero-btn" onClick={onOpenAdmins}>
             {t("admin.header.users", "Користувачі")}
+          </button>
+          <button className="hero-btn" onClick={onOpenCatalogs}>
+            {t("admin.header.catalogs", "Довідники")}
           </button>
           <button className="hero-btn" onClick={onOpenSettings}>
             {t("admin.header.settings", "Профіль")}

@@ -6,6 +6,7 @@ import type {
   ServiceCatalogItem,
   UtilityType,
 } from "@/shared/api/types";
+import { unitLabel } from "@/shared/utils/format";
 
 type ProviderForm = {
   name_full: string;
@@ -513,7 +514,7 @@ export function ProvidersTab({
                 <tr key={item.id}>
                   <td>{item.name}</td>
                   <td>{SERVICE_CALCULATION_LABELS[item.calculation_kind]}</td>
-                  <td>{item.unit_name}</td>
+                  <td>{unitLabel(item.unit_name)}</td>
                   <td>
                     {item.calculation_kind === "metered"
                       ? item.allowed_meter_utility_type

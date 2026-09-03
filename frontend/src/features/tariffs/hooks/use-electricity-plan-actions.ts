@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { api } from "@/shared/api/client";
 import type { MeterItem } from "@/shared/api/types";
 
-type ElectricityPlanForm = {
+export type ElectricityPlanForm = {
   plan_mode: "single" | "day_night" | "tri_zone";
   meter_id: string;
   effective_from: string;

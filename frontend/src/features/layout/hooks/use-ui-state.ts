@@ -9,8 +9,7 @@ type TabKey =
   | "automations"
   | "owner"
   | "report"
-  | "property"
-  | "settings";
+  | "property";
 type BootstrapInfo = {
   username: string | null;
   password: string | null;

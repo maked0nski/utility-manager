@@ -24,8 +24,13 @@ export const formatPhone = (value: unknown): string => {
   return `+${ua.slice(0, 3)} ${ua.slice(3, 5)} ${ua.slice(5, 8)} ${ua.slice(8, 12)}`;
 };
 
-export const unitLabel = (x: string): string =>
-  x === "kWh" ? "1 кВт·год" : x === "m3" ? "1 м3" : x === "month" ? "місяць" : x;
+export const unitLabel = (x: string): string => {
+  const normalized = String(x || "").trim().toLowerCase();
+  if (normalized === "kwh") return "1 кВт·год";
+  if (normalized === "m3") return "1 м3";
+  if (normalized === "month") return "місяць";
+  return x;
+};
 
 export const monthStart = (year: number, month: number): string => monthStartIso(year, month);
 

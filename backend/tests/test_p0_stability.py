@@ -54,6 +54,57 @@ def _login_headers():
     return {"Authorization": f"Bearer {token}"}
 
 
+def _create_fixed_tariff(headers, apartment_id, *, code, name, price_per_unit, effective_from):
+    """Replacement for the old single-call POST /admin/tariffs (410 Gone):
+    creates a ServiceCatalog entry, an ApartmentServiceConnection for the
+    apartment, and one fixed ConnectionChargeLine. _reset_db() wipes the
+    catalog before every test in this file, so no cross-test caching is
+    needed here (unlike test_v1_flow.py, which shares one DB across its
+    whole module)."""
+    catalog = client.post(
+        "/admin/service-catalog",
+        json={
+            "code": code,
+            "name": name,
+            "calculation_kind": "fixed",
+            "unit_name": "month",
+            "requires_meter": False,
+        },
+        headers=headers,
+    )
+    assert catalog.status_code == 201, catalog.text
+    catalog_id = catalog.json()["id"]
+
+    connection = client.post(
+        "/admin/service-connections",
+        json={
+            "apartment_id": apartment_id,
+            "service_catalog_id": catalog_id,
+            "started_at": effective_from,
+            "status": "active",
+        },
+        headers=headers,
+    )
+    assert connection.status_code == 201, connection.text
+    connection_id = connection.json()["id"]
+
+    line = client.post(
+        f"/admin/service-connections/{connection_id}/charge-lines",
+        json={
+            "line_kind": "fixed",
+            "label": name,
+            "unit_name": "month",
+            "price_per_unit": price_per_unit,
+            "quantity_source": "fixed_1",
+            "quantity_multiplier": "1",
+            "effective_from": effective_from,
+        },
+        headers=headers,
+    )
+    assert line.status_code == 201, line.text
+    return line.json()
+
+
 def _seed_apartment(headers):
     apartment = client.post("/admin/apartments", json={"address": "Test Address 1"}, headers=headers)
     assert apartment.status_code == 201
@@ -74,20 +125,14 @@ def _seed_apartment(headers):
     )
     assert tenancy.status_code == 201
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Квартплата",
-            "charge_mode": "fixed",
-            "utility_type": None,
-            "price_per_unit": "100.00",
-            "unit_name": "month",
-            "effective_from": "2024-09-01",
-        },
-        headers=headers,
+    _create_fixed_tariff(
+        headers,
+        apartment_id,
+        code="maintenance_fee",
+        name="Квартплата",
+        price_per_unit="100.00",
+        effective_from="2024-09-01",
     )
-    assert tariff.status_code == 201
     return apartment_id
 
 
@@ -163,56 +208,52 @@ def test_utility_payment_upsert_and_payment_date_per_month():
     )
     assert tenancy.status_code == 201
 
-    tariff = client.post(
-        "/admin/tariffs",
-        json={
-            "apartment_id": apartment_id,
-            "service_name": "Квартплата",
-            "charge_mode": "fixed",
-            "utility_type": None,
-            "price_per_unit": "100.00",
-            "unit_name": "month",
-            "effective_from": "2024-09-01",
-        },
-        headers=headers,
+    _create_fixed_tariff(
+        headers,
+        apartment_id,
+        code="maintenance_fee",
+        name="Квартплата",
+        price_per_unit="100.00",
+        effective_from="2024-09-01",
     )
-    assert tariff.status_code == 201
+
+    # UtilityPaymentCreate has no year/month fields anymore - the payment's
+    # own paid_at date is what determines which month's invoice it applies
+    # to (matches the current admin UI's "Саме ця дата визначає, в який
+    # місяць потрапить оплата" hint), so both payments' paid_at must
+    # actually fall in September to test "same-month accumulation" here.
 
     # First payment for September.
     pay_sep_1 = client.post(
         "/admin/payments/utilities",
         json={
             "apartment_id": apartment_id,
-            "year": 2024,
-            "month": 9,
             "amount": "50.00",
-            "paid_at": "2024-10-01",
+            "paid_at": "2024-09-10",
             "note": "first",
         },
         headers=headers,
     )
-    assert pay_sep_1.status_code == 200
+    assert pay_sep_1.status_code == 200, pay_sep_1.text
 
     # Another payment in the same month (must be added and accumulated).
     pay_sep_2 = client.post(
         "/admin/payments/utilities",
         json={
             "apartment_id": apartment_id,
-            "year": 2024,
-            "month": 9,
             "amount": "60.00",
-            "paid_at": "2024-10-02",
+            "paid_at": "2024-09-20",
             "note": "second",
         },
         headers=headers,
     )
-    assert pay_sep_2.status_code == 200
+    assert pay_sep_2.status_code == 200, pay_sep_2.text
 
     sep = client.get(f"/admin/dashboard/apartments/{apartment_id}?year=2024&month=9", headers=headers)
     assert sep.status_code == 200
     sep_balance = sep.json()["utility_balance"]
     assert sep_balance["month_payments"] == "110.00"
-    assert sep_balance["month_payment_date"] == "2024-10-02"
+    assert sep_balance["month_payment_date"] == "2024-09-20"
     assert sep_balance["month_payment_note"] == "second"
 
     db = TestingSessionLocal()
@@ -228,7 +269,7 @@ def test_utility_payment_upsert_and_payment_date_per_month():
         amounts = sorted(str(x.amount) for x in rows)
         paid_dates = sorted(str(x.paid_at) for x in rows)
         assert amounts == ["50.00", "60.00"]
-        assert paid_dates == ["2024-10-01", "2024-10-02"]
+        assert paid_dates == ["2024-09-10", "2024-09-20"]
     finally:
         db.close()
 
@@ -237,19 +278,17 @@ def test_utility_payment_upsert_and_payment_date_per_month():
         "/admin/payments/utilities",
         json={
             "apartment_id": apartment_id,
-            "year": 2024,
-            "month": 10,
             "amount": "70.00",
-            "paid_at": "2024-11-06",
+            "paid_at": "2024-10-15",
             "note": "oct",
         },
         headers=headers,
     )
-    assert pay_oct.status_code == 200
+    assert pay_oct.status_code == 200, pay_oct.text
 
     sep_again = client.get(f"/admin/dashboard/apartments/{apartment_id}?year=2024&month=9", headers=headers)
     oct_data = client.get(f"/admin/dashboard/apartments/{apartment_id}?year=2024&month=10", headers=headers)
     assert sep_again.status_code == 200
     assert oct_data.status_code == 200
-    assert sep_again.json()["utility_balance"]["month_payment_date"] == "2024-10-02"
-    assert oct_data.json()["utility_balance"]["month_payment_date"] == "2024-11-06"
+    assert sep_again.json()["utility_balance"]["month_payment_date"] == "2024-09-20"
+    assert oct_data.json()["utility_balance"]["month_payment_date"] == "2024-10-15"

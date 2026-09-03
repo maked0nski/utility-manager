@@ -18,8 +18,8 @@ import { TenantTab } from "@/features/tenants/components/TenantTab";
 import { AutomationsTab } from "@/features/tariffs/components/AutomationsTab";
 import { OwnerCostsTab } from "@/features/expenses/components/OwnerCostsTab";
 import { ReportTab } from "@/features/report/components/ReportTab";
-import { ProvidersTab } from "@/features/providers/components/ProvidersTab";
 import { ObjectServicesTab } from "@/features/services/components/ObjectServicesTab";
+import type { ElectricityPlanForm } from "@/features/tariffs/hooks/use-electricity-plan-actions";
 import {
   buildApartmentFormFromGooglePlace,
   buildFullPropertyAddress,
@@ -36,12 +36,11 @@ import type {
   AutomationTemplateItem,
   ApartmentServiceConnectionItem,
   ProviderItem,
-  ServiceCalculationKind,
   ServiceCatalogItem,
   UtilityType,
 } from "@/shared/api/types";
 
-type TabKey = "calc" | "payments" | "tenant" | "tariffs" | "automations" | "owner" | "report" | "property" | "settings";
+type TabKey = "calc" | "payments" | "tenant" | "tariffs" | "automations" | "owner" | "report" | "property";
 const UTILITY_TYPE_LABELS: Record<MeterItem["utility_type"], string> = {
   electricity: "Електроенергія",
   water: "Вода",
@@ -162,15 +161,10 @@ export function DashboardContent({
   createServiceConnection,
   updateServiceConnection,
   deleteServiceConnection,
-  createProvider,
-  updateProvider,
-  deleteProvider,
-  createMeterType,
-  updateMeterType,
-  deleteMeterType,
-  createServiceCatalogItem,
-  updateServiceCatalogItem,
-  deleteServiceCatalogItem,
+  electricityPlanForm,
+  setElectricityPlanForm,
+  electricityMeters,
+  saveElectricityPlan,
   own,
   setOwn,
   addOwner,
@@ -416,68 +410,10 @@ export function DashboardContent({
     },
   ) => Promise<void>;
   deleteServiceConnection: (connectionId: number) => Promise<void>;
-  createProvider: (payload: {
-    name_full: string;
-    utility_type: UtilityType;
-    adapter_code: string;
-    is_active: boolean;
-    note: string;
-  }) => Promise<void>;
-  updateProvider: (
-    providerId: number,
-    payload: {
-      name_full: string;
-      utility_type: UtilityType;
-      adapter_code: string;
-      is_active: boolean;
-      note: string;
-    },
-  ) => Promise<void>;
-  deleteProvider: (providerId: number) => Promise<void>;
-  createMeterType: (payload: {
-    name: string;
-    utility_type: UtilityType;
-    sort_order: number;
-    is_active: boolean;
-  }) => Promise<void>;
-  updateMeterType: (
-    meterTypeId: number,
-    payload: {
-      name: string;
-      utility_type: UtilityType;
-      sort_order: number;
-      is_active: boolean;
-    },
-  ) => Promise<void>;
-  deleteMeterType: (meterTypeId: number) => Promise<void>;
-  createServiceCatalogItem: (payload: {
-    code: string;
-    name: string;
-    calculation_kind: ServiceCalculationKind;
-    unit_name: string;
-    requires_meter: boolean;
-    allowed_meter_utility_type: UtilityType | null;
-    default_provider_utility_type: UtilityType | null;
-    derived_from_service_id: number | null;
-    display_order: number;
-    is_active: boolean;
-  }) => Promise<void>;
-  updateServiceCatalogItem: (
-    serviceCatalogId: number,
-    payload: {
-      code: string;
-      name: string;
-      calculation_kind: ServiceCalculationKind;
-      unit_name: string;
-      requires_meter: boolean;
-      allowed_meter_utility_type: UtilityType | null;
-      default_provider_utility_type: UtilityType | null;
-      derived_from_service_id: number | null;
-      display_order: number;
-      is_active: boolean;
-    },
-  ) => Promise<void>;
-  deleteServiceCatalogItem: (serviceCatalogId: number) => Promise<void>;
+  electricityPlanForm: ElectricityPlanForm;
+  setElectricityPlanForm: Dispatch<SetStateAction<ElectricityPlanForm>>;
+  electricityMeters: MeterItem[];
+  saveElectricityPlan: () => Promise<void>;
   own: any;
   setOwn: (v: any) => void;
   addOwner: () => Promise<void>;
@@ -694,6 +630,9 @@ export function DashboardContent({
               </small>
             </div>
           </div>
+          <p className="helper dashboard-live-strip-label">
+            Стан на сьогодні (може відрізнятися від показників вище, якщо обраний місяць — не поточний):
+          </p>
           <div className="summary-grid dashboard-live-strip">
             <div className="metric">
               <div className="label">Поточний баланс на сьогодні</div>
@@ -745,12 +684,6 @@ export function DashboardContent({
               onClick={() => setTab("automations")}
             >
               Автоматизації
-            </button>
-            <button
-              className={`tab ${tab === "settings" ? "active" : ""}`}
-              onClick={() => setTab("settings")}
-            >
-              Налаштування
             </button>
             <button
               className={`tab ${tab === "report" ? "active" : ""}`}
@@ -850,6 +783,10 @@ export function DashboardContent({
               onCreateConnection={createServiceConnection}
               onUpdateConnection={updateServiceConnection}
               onDeleteConnection={deleteServiceConnection}
+              electricityPlanForm={electricityPlanForm}
+              setElectricityPlanForm={setElectricityPlanForm}
+              electricityMeters={electricityMeters}
+              saveElectricityPlan={saveElectricityPlan}
             />
           )}
 
@@ -892,23 +829,6 @@ export function DashboardContent({
                 onOpenTariffs={() => setTab("tariffs")}
               />
           )}
-          {tab === "settings" && (
-            <ProvidersTab
-              providers={providers}
-              meterTypes={meterTypes}
-              serviceCatalog={serviceCatalog}
-              createProvider={createProvider}
-              updateProvider={updateProvider}
-              deleteProvider={deleteProvider}
-              createMeterType={createMeterType}
-              updateMeterType={updateMeterType}
-              deleteMeterType={deleteMeterType}
-              createServiceCatalogItem={createServiceCatalogItem}
-              updateServiceCatalogItem={updateServiceCatalogItem}
-              deleteServiceCatalogItem={deleteServiceCatalogItem}
-            />
-          )}
-
           {tab === "report" && (
             <ReportTab
               detail={detail}
@@ -987,7 +907,7 @@ export function DashboardContent({
               </div>
               <div className="subcard">
                 <h4>Лічильники</h4>
-                <p className="helper">Тут створюються самі пристрої. Тарифи і стартові показники задаються пізніше у вкладці `Тарифи`.</p>
+                <p className="helper">Тут створюються самі пристрої. Тарифи і стартові показники задаються пізніше у вкладці `Послуги об&apos;єкта`.</p>
                 <div className="meter-list">
                   {meters.length === 0 && <span className="helper">Лічильників ще немає.</span>}
                   {meters.map((meter) => (
@@ -1008,7 +928,7 @@ export function DashboardContent({
                         {" • "}
                         № {meter.serial_number || "—"}
                       </div>
-                      <div className="meter-item-meta">Встановлено: {meter.installed_at || "—"}</div>
+                      <div className="meter-item-meta">Встановлено: {dt(meter.installed_at) || "—"}</div>
                     </button>
                   ))}
                 </div>
@@ -1049,7 +969,7 @@ export function DashboardContent({
                             {item.serial_number ? ` / ${item.serial_number}` : ""}
                           </td>
                           <td>
-                            {item.last_service_at || "—"} / {item.next_service_at || "—"}
+                            {dt(item.last_service_at) || "—"} / {dt(item.next_service_at) || "—"}
                           </td>
                           <td>{item.service_interval_days ?? "—"}</td>
                           <td>{item.is_active ? "Активне" : "Архів"}</td>

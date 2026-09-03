@@ -79,7 +79,6 @@ export function DashboardContent({
   money,
   tab,
   setTab,
-  pushToast,
   dt,
   payments,
   prepareBillingStatement,
@@ -205,7 +204,6 @@ export function DashboardContent({
   money: (v: unknown) => string;
   tab: TabKey;
   setTab: (tab: TabKey) => void;
-  pushToast: (message: string, type?: "success" | "error" | "info") => void;
   dt: (x: string | Date | null | undefined) => string;
   payments: UtilityPaymentItem[];
   prepareBillingStatement: () => Promise<void>;

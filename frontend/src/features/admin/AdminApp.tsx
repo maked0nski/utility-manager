@@ -1212,7 +1212,6 @@ export function AdminApp() {
         money={money}
         tab={tab}
         setTab={setTab}
-        pushToast={pushToast}
         dt={dt}
         payments={payments}
         prepareBillingStatement={prepareBillingStatement}

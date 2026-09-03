@@ -24,7 +24,7 @@ function injectGoogleMapsLoader(apiKey: string) {
 
     const ensureScript = () =>
       scriptLoadingPromise ||
-      (scriptLoadingPromise = new Promise(async (resolveScript, rejectScript) => {
+      (scriptLoadingPromise = new Promise((resolveScript, rejectScript) => {
         const script = document.createElement("script");
         params.set("libraries", [...requestedLibraries].join(","));
         params.set("key", apiKey);

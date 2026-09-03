@@ -26,6 +26,7 @@ export function PlaceAutocompleteField({ country, onPlaceSelect }: PlaceAutocomp
     let disposed = false;
     let widget: any = null;
     let handleError: (() => void) | null = null;
+    const host = hostRef.current;
 
     const setup = async () => {
       try {
@@ -82,8 +83,8 @@ export function PlaceAutocompleteField({ country, onPlaceSelect }: PlaceAutocomp
         widget.removeEventListener("gmp-error", handleError);
         widget.removeEventListener("gmp-requesterror", handleError);
       }
-      if (hostRef.current) {
-        hostRef.current.innerHTML = "";
+      if (host) {
+        host.innerHTML = "";
       }
     };
   }, [country, language, onPlaceSelect]);

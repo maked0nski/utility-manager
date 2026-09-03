@@ -15,7 +15,6 @@ import httpx
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app.api.admin._shared import _recalc_from_period
 from app.core.security import decrypt_text
 from app.models import (
     Apartment,
@@ -48,20 +47,20 @@ UK_MONTHS = {
     12: "грудень",
 }
 
-VODOKANAL_CABINET_LOGIN_URL = "https://new.vodokanal.if.ua/kabinet-spozhyvacha/pereity-v-kabinet-spozhyvacha/"
-VODOKANAL_AUTH_URL = "https://vodokanal.if.ua/propibank/newcab.php"
+VODOKANAL_KABINET_URL = "https://www.vodokanal.if.ua/kabinet/"
 ATP0928_CABINET_URL = "https://atp0928.if.ua/osobystyy-kabinet-korystuvacha"
 ATP0928_LOGIN_URL = "https://atp0928.if.ua/wp-login.php"
 ATP0928_TARIFF_URL = "https://atp0928.if.ua/tarif"
 
-VODOKANAL_SERVICE_CARD_MAP: dict[str, tuple[str, str]] = {
-    "Послуга водопостачання": ("water_supply", "Водопостачання"),
-    "Послуга водовідведення": ("sewage", "Водовідведення"),
-    "Абонплата": ("water_subscription", "Абонентська плата (водоканал)"),
+# Keys match VKCAB.tarify's "voda"/"kanal"/"abon" from the vodokanal.if.ua kabinet bootstrap JSON.
+VODOKANAL_TARIFF_KEY_MAP: dict[str, tuple[str, str]] = {
+    "voda": ("water_supply", "Водопостачання"),
+    "kanal": ("sewage", "Водовідведення"),
+    "abon": ("water_subscription", "Абонентська плата (водоканал)"),
 }
 
-VODOKANAL_SERVICE_CODES = {code for code, _ in VODOKANAL_SERVICE_CARD_MAP.values()}
-VODOKANAL_SERVICE_LABELS = {code: label for code, label in VODOKANAL_SERVICE_CARD_MAP.values()}
+VODOKANAL_SERVICE_CODES = {code for code, _ in VODOKANAL_TARIFF_KEY_MAP.values()}
+VODOKANAL_SERVICE_LABELS = {code: label for code, label in VODOKANAL_TARIFF_KEY_MAP.values()}
 VODOKANAL_READING_DRIVER_CODE = "water_supply"
 ATP0928_SERVICE_CODE = "waste"
 
@@ -158,23 +157,6 @@ def _extract_link_by_caption(html: str, caption: str) -> str | None:
     return found.group(1).strip()
 
 
-def _extract_login_bridge_fields(html: str) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for input_tag in re.findall(r"<input\b[^>]*>", html, flags=re.IGNORECASE | re.DOTALL):
-        attrs: dict[str, str] = {}
-        for attr_match in re.finditer(
-            r'([a-zA-Z_:][a-zA-Z0-9_.:-]*)\s*=\s*([\'"])(.*?)\2',
-            input_tag,
-            flags=re.IGNORECASE | re.DOTALL,
-        ):
-            attrs[attr_match.group(1).lower()] = unescape(attr_match.group(3))
-        name = attrs.get("name")
-        if not name:
-            continue
-        fields[name] = attrs.get("value", "")
-    return fields
-
-
 def _extract_form(html: str) -> tuple[str | None, str] | None:
     form_match = re.search(r"<form[^>]*>(.*?)</form>", html, flags=re.IGNORECASE | re.DOTALL)
     if not form_match:
@@ -215,56 +197,6 @@ def _extract_form_by_id(html: str, form_id: str) -> tuple[str | None, str | None
     return action, method, fields
 
 
-def _extract_vodokanal_submit_form(html: str) -> tuple[str, str, dict[str, str]] | None:
-    forms = re.finditer(r"<form[^>]*>.*?</form>", html, flags=re.IGNORECASE | re.DOTALL)
-    for form_match in forms:
-        whole_form = form_match.group(0)
-        action_match = re.search(r'action=[\'"]([^\'"]*)[\'"]', whole_form, flags=re.IGNORECASE)
-        method_match = re.search(r'method=[\'"]([^\'"]*)[\'"]', whole_form, flags=re.IGNORECASE)
-        action = (action_match.group(1).strip() if action_match else "")
-        method = (method_match.group(1).strip().lower() if method_match else "get")
-        if "viberpokaz2.php" not in action:
-            continue
-        fields: dict[str, str] = {}
-        for input_tag in re.findall(r"<input\b[^>]*>", whole_form, flags=re.IGNORECASE | re.DOTALL):
-            attrs: dict[str, str] = {}
-            for attr_match in re.finditer(
-                r'([a-zA-Z_:][a-zA-Z0-9_.:-]*)\s*=\s*([\'"])(.*?)\2',
-                input_tag,
-                flags=re.IGNORECASE | re.DOTALL,
-            ):
-                attrs[attr_match.group(1).lower()] = unescape(attr_match.group(3))
-            name = attrs.get("name")
-            if not name:
-                continue
-            fields[name] = attrs.get("value", "")
-        if "pokaz" in fields and "osr" in fields and "nlichn" in fields:
-            return action, method, fields
-    return None
-
-
-def _parse_vodokanal_stats_rows(stats_html: str) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for row_html in re.findall(r"<tr[^>]*>.*?</tr>", stats_html, flags=re.IGNORECASE | re.DOTALL):
-        cells = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, flags=re.IGNORECASE | re.DOTALL)
-        texts = [_only_text(c) for c in cells]
-        if len(texts) < 7:
-            continue
-        # Expected order: month, location, meter name, meter number, verification date, value, submitted date
-        rows.append(
-            {
-                "month": texts[0],
-                "location": texts[1],
-                "meter_name": texts[2],
-                "meter_number": texts[3],
-                "verification_date": texts[4],
-                "value": texts[5],
-                "submitted_date": texts[6],
-            }
-        )
-    return rows
-
-
 def _vodokanal_target_period(local_now: datetime, day_from: int, day_to: int) -> tuple[int, int]:
     # For cross-month window like 25..3:
     # 25..end of month -> same month, 1..3 -> previous month.
@@ -278,14 +210,6 @@ def _vodokanal_target_period(local_now: datetime, day_from: int, day_to: int) ->
     if local_now.day >= 25:
         return local_now.year, local_now.month
     return local_now.year, local_now.month
-
-
-def _build_month_short_label(year: int, month: int) -> str:
-    return f"{month:02d}.{str(year)[-2:]}"
-
-
-def _build_month_full_label(year: int, month: int) -> str:
-    return f"{month:02d}.{year}"
 
 
 def _parse_decimal(value: str) -> Decimal | None:
@@ -645,66 +569,6 @@ def _service_charge_line_for_period(
     return None
 
 
-def _upsert_service_charge_line_price(
-    db: Session,
-    *,
-    apartment_id: int,
-    service_name: str,
-    period_start: date,
-    new_value: Decimal,
-    connection_id: int | None = None,
-    service_catalog_id: int | None = None,
-) -> tuple[ConnectionChargeLine | None, Decimal | None]:
-    current_line = _service_charge_line_for_period(
-        db,
-        apartment_id=apartment_id,
-        service_name=service_name,
-        period_start=period_start,
-        connection_id=connection_id,
-        service_catalog_id=service_catalog_id,
-    )
-    if current_line is None:
-        return None, None
-    old_value = Decimal(current_line.price_per_unit).quantize(Decimal("0.01"))
-    existing = db.scalar(
-        select(ConnectionChargeLine).where(
-            and_(
-                ConnectionChargeLine.connection_id == current_line.connection_id,
-                ConnectionChargeLine.label == current_line.label,
-                ConnectionChargeLine.line_kind == current_line.line_kind,
-                ConnectionChargeLine.meter_id == current_line.meter_id,
-                ConnectionChargeLine.meter_register == current_line.meter_register,
-                ConnectionChargeLine.effective_from == period_start,
-            )
-        )
-    )
-    if existing is not None:
-        existing.price_per_unit = new_value
-        return existing, old_value
-    if current_line.effective_from < period_start and (
-        current_line.effective_to is None or current_line.effective_to >= period_start
-    ):
-        current_line.effective_to = period_start - timedelta(days=1)
-    clone = ConnectionChargeLine(
-        connection_id=current_line.connection_id,
-        line_kind=current_line.line_kind,
-        label=current_line.label,
-        meter_id=current_line.meter_id,
-        meter_register=current_line.meter_register,
-        derived_from_line_id=current_line.derived_from_line_id,
-        unit_name=current_line.unit_name,
-        price_per_unit=new_value,
-        quantity_source=current_line.quantity_source,
-        quantity_multiplier=current_line.quantity_multiplier,
-        effective_from=period_start,
-        effective_to=None,
-        is_active=current_line.is_active,
-    )
-    db.add(clone)
-    db.flush()
-    return clone, old_value
-
-
 def _apply_cabinet_tariff_observation(
     current_line: ConnectionChargeLine,
     *,
@@ -1013,67 +877,73 @@ def _run_atp0928(
     setting.auto_check_message = "; ".join(message_parts)[:255] if message_parts else "ATP-0928 sync completed"
 
 
-def _parse_vodokanal_tariffs(dashboard_html: str) -> dict[str, Decimal]:
+def _fetch_vkcab_bootstrap(client: httpx.Client) -> dict | None:
+    """GET the public kabinet page and parse the embedded `VKCAB = {...}` config.
+
+    This works without authentication and already carries the current city
+    tariffs under `tarify` (keys "voda"/"kanal"/"abon"), plus the `ajax` URL
+    and `nonce` needed for the AJAX login/data calls.
+    """
+    resp = client.get(VODOKANAL_KABINET_URL)
+    if resp.status_code != 200:
+        return None
+    match = re.search(r"VKCAB\s*=\s*(\{.*?\});", resp.text, flags=re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except Exception:
+        return None
+
+
+def _parse_vkcab_price(raw: str | None) -> Decimal | None:
+    if not raw:
+        return None
+    cleaned = re.sub(r"[^0-9,.]", "", raw)
+    return _parse_decimal(cleaned)
+
+
+def _parse_vodokanal_tariffs(bootstrap: dict) -> dict[str, Decimal]:
+    tarify = bootstrap.get("tarify") or {}
     result: dict[str, Decimal] = {}
-    for card_title, (service_code, _) in VODOKANAL_SERVICE_CARD_MAP.items():
-        # Parse from raw DOM to avoid brittle distance limits on flattened text.
-        found = re.search(
-            r"<h5[^>]*>\s*" + re.escape(card_title) + r"\s*</h5>.*?Тариф:\s*([0-9]+(?:[.,][0-9]+)?)",
-            dashboard_html,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        if not found:
-            # Fallback by text for minor layout changes.
-            text = _only_text(dashboard_html)
-            found = re.search(
-                re.escape(card_title) + r".*?Тариф:\s*([0-9]+(?:[.,][0-9]+)?)",
-                text,
-                flags=re.IGNORECASE | re.DOTALL,
-            )
-        if not found:
-            continue
-        value = _parse_decimal(found.group(1))
+    for tariff_key, (service_code, _) in VODOKANAL_TARIFF_KEY_MAP.items():
+        entry = tarify.get(tariff_key) or {}
+        value = _parse_vkcab_price(entry.get("t"))
         if value is not None:
             result[service_code] = value
     return result
 
 
-def _extract_vodokanal_payload_from_bridge_fields(bridge_fields: dict[str, str]) -> dict:
-    payload: dict = {"stat": bridge_fields.get("stat"), "osr": bridge_fields.get("osr")}
-    for field in ("dani", "dani_k", "dani_info"):
-        raw = bridge_fields.get(field)
-        if not raw:
-            payload[field] = {}
-            continue
-        try:
-            payload[field] = json.loads(raw)
-        except Exception:
-            payload[field] = {}
-    return payload
+def _vkcab_login(client: httpx.Client, *, ajax_url: str, nonce: str, login: str, password: str) -> tuple[bool, str]:
+    resp = client.post(ajax_url, data={"action": "vkcab_login", "login": login, "password": password, "nonce": nonce})
+    if resp.status_code != 200:
+        return False, f"HTTP {resp.status_code}"
+    try:
+        body = resp.json()
+    except Exception:
+        return False, "unexpected login response"
+    if body.get("success"):
+        return True, ""
+    message = ((body.get("data") or {}).get("message") if isinstance(body.get("data"), dict) else None) or "auth failed"
+    return False, message
 
 
-def _parse_vodokanal_tariffs_from_payload(payload: dict) -> dict[str, Decimal]:
-    z = payload.get("dani_k", {}).get("zaborgovanosti", {})
-    values = {
-        "water_supply": z.get("vodopostachannya_tarif"),
-        "sewage": z.get("vodovidvedennya_tarif"),
-        "water_subscription": z.get("abon_tarif"),
-    }
-    out: dict[str, Decimal] = {}
-    for service_name, raw in values.items():
-        if raw is None:
-            continue
-        val = _parse_decimal(str(raw))
-        if val is not None:
-            out[service_name] = val
-    return out
+def _extract_vkcab_osr(dashboard_html: str) -> str | None:
+    match = re.search(r'id=["\']vkcab-app["\'][^>]*data-osr=["\']([0-9]+)["\']', dashboard_html, flags=re.DOTALL)
+    return match.group(1) if match else None
 
 
-def _extract_vodokanal_current_meter_rows(payload: dict) -> list[dict]:
-    rows = payload.get("dani_k", {}).get("lichul", {}).get("lic_potochni", {}).get("pot_lich", [])
-    if isinstance(rows, list):
-        return [x for x in rows if isinstance(x, dict)]
-    return []
+def _vkcab_fetch_data(client: httpx.Client, *, ajax_url: str, nonce: str, osr: str) -> dict | None:
+    resp = client.post(ajax_url, data={"action": "vkcab_data", "osr": osr, "mode": "zvedennya", "nonce": nonce})
+    if resp.status_code != 200:
+        return None
+    try:
+        body = resp.json()
+    except Exception:
+        return None
+    if not body.get("success"):
+        return None
+    return body.get("data") or {}
 
 
 def _find_current_meter_reading_for_service(
@@ -1124,13 +994,6 @@ def _format_reading_for_submit(value: Decimal) -> str:
     return text or "0"
 
 
-def _stats_row_matches_target_reading(row_value: str, expected: Decimal) -> bool:
-    parsed = _parse_decimal(row_value)
-    if parsed is None:
-        return False
-    return parsed.quantize(Decimal("0.001")) == expected.quantize(Decimal("0.001"))
-
-
 def _run_vodokanal(
     db: Session,
     *,
@@ -1143,58 +1006,16 @@ def _run_vodokanal(
 ) -> None:
     cabinet_login = (setting.cabinet_login or "").strip()
     cabinet_password = decrypt_text(setting.cabinet_password_encrypted) or ""
-    if not cabinet_login or not cabinet_password:
-        setting.auto_check_status = "error"
-        setting.auto_check_message = "cabinet credentials are missing"
-        setting.auto_check_last_checked_at = now_utc
-        return
-
-    login_url = (setting.cabinet_url or "").strip() or VODOKANAL_CABINET_LOGIN_URL
-    login_url = login_url.rstrip("/") + "/"
-    parsed = urlparse(login_url)
-    cabinet_base = f"{parsed.scheme}://{parsed.netloc}"
-    cabinet_dashboard_url = urljoin(cabinet_base, "/kabinet-spozhyvacha/")
 
     with httpx.Client(follow_redirects=True, timeout=25.0) as client:
-        auth = client.post(VODOKANAL_AUTH_URL, data={"login": cabinet_login, "password": cabinet_password})
-        if auth.status_code != 200:
+        bootstrap = _fetch_vkcab_bootstrap(client)
+        if bootstrap is None:
             setting.auto_check_status = "error"
-            setting.auto_check_message = f"Vodokanal auth failed: HTTP {auth.status_code}"
+            setting.auto_check_message = "Не вдалося завантажити сторінку кабінету Водоканалу"
             setting.auto_check_last_checked_at = now_utc
             return
-
-        bridge_fields = _extract_login_bridge_fields(auth.text)
-        if not bridge_fields:
-            setting.auto_check_status = "error"
-            setting.auto_check_message = "Vodokanal auth bridge fields were not found"
-            setting.auto_check_last_checked_at = now_utc
-            return
-        bridge_payload = _extract_vodokanal_payload_from_bridge_fields(bridge_fields)
-        if (bridge_payload.get("stat") or "").strip().lower() != "ok":
-            setting.auto_check_status = "error"
-            setting.auto_check_message = "Vodokanal auth status is not OK"
-            setting.auto_check_last_checked_at = now_utc
-            return
-
-        cabinet = client.post(cabinet_dashboard_url, data=bridge_fields)
-        if cabinet.status_code != 200:
-            setting.auto_check_status = "error"
-            setting.auto_check_message = f"Cabinet open failed: HTTP {cabinet.status_code}"
-            setting.auto_check_last_checked_at = now_utc
-            return
-
-        dashboard_html = cabinet.text
-        dashboard_text = _only_text(dashboard_html)
-        if "Невірно введений логін або пароль" in dashboard_text:
-            setting.auto_check_status = "error"
-            setting.auto_check_message = "Невірно введений логін або пароль"
-            setting.auto_check_last_checked_at = now_utc
-            return
-        if "Кабінет споживача" not in dashboard_text:
-            setting.auto_check_status = "error"
-            setting.auto_check_message = "Vodokanal cabinet page did not match expected layout"
-            setting.auto_check_last_checked_at = now_utc
-            return
+        ajax_url = str(bootstrap.get("ajax") or "")
+        nonce = str(bootstrap.get("nonce") or "")
 
         message_parts: list[str] = []
         has_error = False
@@ -1208,114 +1029,129 @@ def _run_vodokanal(
                 row.auto_check_window_day_from = 25
                 row.auto_check_window_day_to = 3
 
-        if force_mode in {"full", "readings"}:
-            if setting.service_code == VODOKANAL_READING_DRIVER_CODE:
-                if _is_day_in_window(local_now.day, day_from, day_to):
-                    target_reading_year, target_reading_month = _vodokanal_target_period(local_now, day_from, day_to)
-                    target_reading_label = _build_month_short_label(target_reading_year, target_reading_month)
-                    target_reading_label_full = _build_month_full_label(target_reading_year, target_reading_month)
-                    current_reading = _find_current_meter_reading_for_service(
-                        db,
-                        apartment_id=setting.apartment_id,
-                        service_name=setting.service_name,
-                        year=target_reading_year,
-                        month=target_reading_month,
-                        connection_id=setting.connection_id,
-                        service_catalog_id=setting.service_catalog_id,
-                    )
-                    if current_reading is None:
-                        has_waiting = True
-                        message_parts.append("Немає поточного показника на вкладці Розрахунок")
+        # Meter-reading submission needs an authenticated session; the tariff
+        # table below is public and never requires logging in.
+        if force_mode in {"full", "readings"} and setting.service_code == VODOKANAL_READING_DRIVER_CODE:
+            if not _is_day_in_window(local_now.day, day_from, day_to):
+                pass
+            elif not cabinet_login or not cabinet_password:
+                has_error = True
+                message_parts.append("cabinet credentials are missing")
+            elif not ajax_url or not nonce:
+                has_error = True
+                message_parts.append("Не вдалося визначити ajax/nonce кабінету")
+            else:
+                logged_in, login_error = _vkcab_login(
+                    client, ajax_url=ajax_url, nonce=nonce, login=cabinet_login, password=cabinet_password
+                )
+                if not logged_in:
+                    has_error = True
+                    message_parts.append(f"Вхід у кабінет не вдався: {login_error}")
+                else:
+                    dashboard = client.get(VODOKANAL_KABINET_URL)
+                    osr = _extract_vkcab_osr(dashboard.text) if dashboard.status_code == 200 else None
+                    if not osr:
+                        has_error = True
+                        message_parts.append("У кабінеті відсутній особовий рахунок (osr)")
                     else:
-                        osr = (bridge_payload.get("osr") or "").strip()
-                        meter_rows = _extract_vodokanal_current_meter_rows(bridge_payload)
-                        meter_row = meter_rows[0] if meter_rows else {}
-                        meter_number = str(meter_row.get("nomerlich") or "").strip()
-                        if not osr:
+                        personal_data = _vkcab_fetch_data(client, ajax_url=ajax_url, nonce=nonce, osr=osr)
+                        if personal_data is None:
                             has_error = True
-                            message_parts.append("У кабінеті відсутній особовий рахунок (osr)")
-                        elif not meter_number:
-                            has_error = True
-                            message_parts.append("У кабінеті відсутній номер лічильника для submit")
+                            message_parts.append("Не вдалося завантажити дані особового рахунку")
                         else:
-                            stats_endpoint = "https://vodokanal.if.ua/propibank/lichpot.php"
-                            submit_endpoint = "https://vodokanal.if.ua/propibank/viberpokaz2.php"
-                            stats_before_resp = client.post(stats_endpoint, data={"osr": osr})
-
-                            stats_rows_before = (
-                                _parse_vodokanal_stats_rows(stats_before_resp.text)
-                                if stats_before_resp.status_code == 200
-                                else []
+                            target_reading_year, target_reading_month = _vodokanal_target_period(
+                                local_now, day_from, day_to
                             )
-                            already_exists = any(
-                                row.get("month", "").strip() in {target_reading_label, target_reading_label_full}
-                                and _stats_row_matches_target_reading(row.get("value", "").strip(), current_reading)
-                                for row in stats_rows_before
+                            # The site logs `podani[].period` as the calendar month of the
+                            # submission itself (e.g. a reading submitted 02.09 in the
+                            # 25 Aug-3 Sep window is filed under period 202609), which can
+                            # differ from the month our own app attributes the reading to
+                            # (`target_reading_year`/`_month`, used only for our DB lookup below).
+                            today_period = local_now.year * 100 + local_now.month
+                            current_reading = _find_current_meter_reading_for_service(
+                                db,
+                                apartment_id=setting.apartment_id,
+                                service_name=setting.service_name,
+                                year=target_reading_year,
+                                month=target_reading_month,
+                                connection_id=setting.connection_id,
+                                service_catalog_id=setting.service_catalog_id,
                             )
-                            if already_exists:
-                                this_service_no_change = True
-                                setting.auto_check_last_value_raw = current_reading.quantize(Decimal("0.0001"))
-                                setting.auto_check_last_value_rounded = current_reading.quantize(Decimal("0.01"))
-                                message_parts.append(
-                                    f"Показник за {target_reading_label} вже є у 'Статистика показників', submit пропущено"
-                                )
-                                skip_submit = True
+                            if current_reading is None:
+                                has_waiting = True
+                                message_parts.append("Немає поточного показника на вкладці Розрахунок")
                             else:
-                                skip_submit = False
-                            if not skip_submit:
-                                submit_value = _format_reading_for_submit(current_reading)
-                                submit_resp = client.get(
-                                    submit_endpoint,
-                                    params={"pokaz": submit_value, "osr": osr, "nlichn": meter_number},
-                                )
-                                if submit_resp.status_code != 200:
+                                meters = personal_data.get("lichylnyky") or []
+                                meter_row = meters[0] if meters else None
+                                if not meter_row:
                                     has_error = True
-                                    message_parts.append(f"Submit показника повернув HTTP {submit_resp.status_code}")
+                                    message_parts.append("У кабінеті відсутній лічильник для submit")
                                 else:
-                                    stats_resp = client.post(stats_endpoint, data={"osr": osr})
-                                    stats_rows_after = (
-                                        _parse_vodokanal_stats_rows(stats_resp.text)
-                                        if stats_resp.status_code == 200
-                                        else []
+                                    already_submitted = any(
+                                        str(row.get("period") or "") == str(today_period)
+                                        and _parse_decimal(str(row.get("pokaznyk") or ""))
+                                        == current_reading.quantize(Decimal("0.001"))
+                                        for row in (personal_data.get("podani") or [])
                                     )
-                                    confirmed = any(
-                                        row.get("month", "").strip() in {target_reading_label, target_reading_label_full}
-                                        and _stats_row_matches_target_reading(
-                                            row.get("value", "").strip(),
-                                            current_reading,
-                                        )
-                                        for row in stats_rows_after
-                                    )
-                                    if not confirmed:
-                                        has_error = True
-                                        message_parts.append("Показник не підтверджено у 'Статистика показників'")
-                                    else:
-                                        has_update = True
-                                        this_service_updated = True
+                                    reading_label = f"{target_reading_month:02d}.{target_reading_year}"
+                                    if already_submitted:
+                                        this_service_no_change = True
                                         setting.auto_check_last_value_raw = current_reading.quantize(Decimal("0.0001"))
                                         setting.auto_check_last_value_rounded = current_reading.quantize(Decimal("0.01"))
-                                        message_parts.append(
-                                            f"Показник {submit_value} за {target_reading_label} підтверджено у статистиці"
+                                        message_parts.append(f"Показник за {reading_label} вже подано, submit пропущено")
+                                    else:
+                                        submit_value = _format_reading_for_submit(current_reading)
+                                        readings_payload = json.dumps(
+                                            [
+                                                {
+                                                    "nlich": str(meter_row.get("nlich") or ""),
+                                                    "nomer": str(
+                                                        meter_row.get("nomer_real") or meter_row.get("nomerlich") or ""
+                                                    ),
+                                                    "type": str(meter_row.get("type") or ""),
+                                                    "value": submit_value,
+                                                }
+                                            ]
                                         )
-            else:
-                message_parts.append("Подача показників керується послугою 'Водопостачання'")
+                                        submit_resp = client.post(
+                                            ajax_url,
+                                            data={
+                                                "action": "vkcab_reading",
+                                                "osr": osr,
+                                                "readings": readings_payload,
+                                                "nonce": nonce,
+                                            },
+                                        )
+                                        submit_ok = False
+                                        if submit_resp.status_code == 200:
+                                            try:
+                                                submit_ok = bool(submit_resp.json().get("success"))
+                                            except Exception:
+                                                submit_ok = False
+                                        if not submit_ok:
+                                            has_error = True
+                                            message_parts.append("Не вдалося подати показник у кабінеті")
+                                        else:
+                                            has_update = True
+                                            this_service_updated = True
+                                            setting.auto_check_last_value_raw = current_reading.quantize(Decimal("0.0001"))
+                                            setting.auto_check_last_value_rounded = current_reading.quantize(Decimal("0.01"))
+                                            message_parts.append(f"Показник {submit_value} за {reading_label} подано")
+        elif force_mode in {"full", "readings"}:
+            message_parts.append("Подача показників керується послугою 'Водопостачання'")
 
         if force_mode in {"full", "tariffs"}:
-            parsed_tariffs = _parse_vodokanal_tariffs_from_payload(bridge_payload)
-            if not parsed_tariffs:
-                parsed_tariffs = _parse_vodokanal_tariffs(dashboard_html)
+            parsed_tariffs = _parse_vodokanal_tariffs(bootstrap)
             if not parsed_tariffs:
                 has_error = True
                 message_parts.append("Тарифи в кабінеті не знайдено")
             else:
                 period_start = date(local_now.year, local_now.month, 1)
                 settings_by_service_code = {row.service_code: row for row in apartment_settings if row.service_code}
-                updated_service_codes: set[str] = set()
-                unchanged_service_codes: set[str] = set()
-                updated_services: list[str] = []
-                unchanged_services: list[str] = []
+                observed_service_codes: set[str] = set()
+                ok_labels: list[str] = []
+                below_floor_labels: list[str] = []
                 missing_services: list[str] = []
-                recalc_needed = False
 
                 for service_code in ("water_supply", "sewage", "water_subscription"):
                     service_label = VODOKANAL_SERVICE_LABELS.get(service_code, service_code)
@@ -1345,60 +1181,42 @@ def _run_vodokanal(
                             target_setting.auto_check_message = "Активний рядок тарифу у БД не знайдено"
                             target_setting.auto_check_last_checked_at = now_utc
                             target_setting.last_tariff_check_at = now_utc
-                    else:
-                        new_value = fetched_raw.quantize(Decimal("0.01"))
-                        current_value = Decimal(current_line.price_per_unit).quantize(Decimal("0.01"))
-                        if target_setting is not None:
-                            target_setting.auto_check_last_value_raw = fetched_raw.quantize(Decimal("0.0001"))
-                            target_setting.auto_check_last_checked_at = now_utc
-                            target_setting.last_tariff_check_at = now_utc
-                        if new_value <= current_value:
-                            unchanged_service_codes.add(service_code)
-                            unchanged_services.append(service_label)
-                            if target_setting is not None:
-                                target_setting.auto_check_status = "no_change"
-                                target_setting.auto_check_last_value_rounded = current_value
-                                target_setting.auto_check_completed_for_period = True
-                                target_setting.auto_check_message = f"Без змін ({new_value} <= {current_value})"
-                        else:
-                            target_line, _ = _upsert_service_charge_line_price(
-                                db,
-                                apartment_id=setting.apartment_id,
-                                service_name=service_label,
-                                period_start=period_start,
-                                new_value=new_value,
-                                connection_id=target_setting.connection_id if target_setting is not None else None,
-                                service_catalog_id=target_setting.service_catalog_id if target_setting is not None else None,
-                            )
-                            if target_line is None:
-                                missing_services.append(service_label)
-                                if target_setting is not None:
-                                    target_setting.auto_check_status = "error"
-                                    target_setting.auto_check_message = "Не вдалося оновити рядок тарифу"
-                            else:
-                                recalc_needed = True
-                                updated_service_codes.add(service_code)
-                                updated_services.append(service_label)
-                                if target_setting is not None:
-                                    target_setting.auto_check_status = "updated"
-                                    target_setting.auto_check_last_value_rounded = new_value
-                                    target_setting.auto_check_completed_for_period = True
-                                    target_setting.auto_check_last_updated_at = now_utc
-                                    target_setting.auto_check_message = f"Тариф оновлено до {new_value}"
+                        continue
 
-                if recalc_needed:
-                    db.flush()
-                    _recalc_from_period(db, setting.apartment_id, local_now.year, local_now.month)
-                    has_update = True
-                if updated_services:
-                    message_parts.append("Оновлено тарифи: " + ", ".join(updated_services))
-                if unchanged_services:
-                    message_parts.append("Без змін: " + ", ".join(unchanged_services))
+                    candidate_value = fetched_raw.quantize(Decimal("0.0001"))
+                    current_value = Decimal(current_line.price_per_unit).quantize(Decimal("0.01"))
+                    rounded = fetched_raw.quantize(Decimal("0.01"))
+                    _apply_cabinet_tariff_observation(current_line, candidate_value=candidate_value, checked_at=now_utc)
+                    observed_service_codes.add(service_code)
+                    if target_setting is not None:
+                        target_setting.auto_check_last_value_raw = candidate_value
+                        target_setting.auto_check_last_value_rounded = rounded
+                        target_setting.auto_check_last_checked_at = now_utc
+                        target_setting.last_tariff_check_at = now_utc
+                        target_setting.auto_check_completed_for_period = True
+                        target_setting.auto_check_status = "updated"
+                        target_setting.auto_check_last_updated_at = now_utc
+                    if current_value >= rounded:
+                        ok_labels.append(service_label)
+                        if target_setting is not None:
+                            target_setting.auto_check_message = f"Тариф з кабінету: {rounded} (мій {current_value} — без змін)"
+                    else:
+                        below_floor_labels.append(service_label)
+                        if target_setting is not None:
+                            target_setting.auto_check_message = (
+                                f"Тариф з кабінету: {rounded} (мій {current_value} — перевірте вручну)"
+                            )
+
+                if ok_labels:
+                    message_parts.append("Тариф з кабінету отримано (без змін): " + ", ".join(ok_labels))
+                if below_floor_labels:
+                    message_parts.append("Тариф з кабінету отримано (перевірте вручну): " + ", ".join(below_floor_labels))
                 if missing_services:
                     has_error = True
-                    message_parts.append("Не знайдено/не оновлено: " + ", ".join(missing_services))
-                this_service_updated = (setting.service_code or "") in updated_service_codes
-                this_service_no_change = (setting.service_code or "") in unchanged_service_codes
+                    message_parts.append("Не знайдено: " + ", ".join(missing_services))
+                if observed_service_codes:
+                    has_update = True
+                this_service_updated = (setting.service_code or "") in observed_service_codes
 
         setting.auto_check_last_checked_at = now_utc
         setting.last_tariff_check_at = now_utc

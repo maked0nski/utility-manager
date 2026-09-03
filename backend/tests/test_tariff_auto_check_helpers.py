@@ -8,6 +8,8 @@ from app.workers.tariff_auto_check import (
     _parse_atp0928_accrued_from_html,
     _parse_atp0928_tariff_from_html,
     _parse_vodokanal_tariffs,
+    _parse_vkcab_price,
+    _extract_vkcab_osr,
 )
 
 
@@ -37,31 +39,41 @@ def test_next_run_at_cross_month_window_after_today_slot():
     assert next_utc.tzinfo == UTC
 
 
-def test_parse_vodokanal_tariffs_from_dashboard_cards():
-    long_gap = "x" * 2500
-    html = f"""
-    <div class="card">
-      <div class="card-header bg-light"><h5 class="m-0">Послуга водопостачання</h5></div>
-      <div class="card-body">{long_gap}<ul><li>Тариф: 12.95 грн/м<sup>3</sup></li></ul></div>
-    </div>
-    <div class="card">
-      <div class="card-header bg-light"><h5 class="m-0">Послуга водовідведення</h5></div>
-      <div class="card-body"><ul><li>Тариф: 15.29 грн/м<sup>3</sup></li></ul></div>
-    </div>
-    <div class="card">
-      <div class="card-header bg-light"><h5 class="m-0">Абонплата</h5></div>
-      <div class="card-body"><ul><li>Тариф: 24.67 грн/м<sup>3</sup></li></ul></div>
-    </div>
-    """
-    # _parse_vodokanal_tariffs is keyed by internal service_code
-    # ("water_supply", "sewage", "water_subscription"), matching its real
-    # caller in tariff_auto_check.py (`parsed_tariffs.get(service_code)`,
-    # with the Ukrainian label derived separately via
-    # VODOKANAL_SERVICE_LABELS) - not by the Ukrainian label itself.
-    parsed = _parse_vodokanal_tariffs(html)
-    assert parsed["water_supply"] == Decimal("12.95")
-    assert parsed["sewage"] == Decimal("15.29")
+def test_parse_vodokanal_tariffs_from_vkcab_bootstrap():
+    # Since the 2026 site redesign, tariffs come from the public (unauthenticated)
+    # `VKCAB.tarify` JSON embedded on the kabinet page, keyed by "voda"/"kanal"/"abon".
+    # _parse_vodokanal_tariffs maps those to internal service codes
+    # ("water_supply", "sewage", "water_subscription").
+    bootstrap = {
+        "tarify": {
+            "voda": {"t": "35,45 грн/м³", "from": "09.07.2026"},
+            "kanal": {"t": "30,06 грн/м³", "from": "09.07.2026"},
+            "abon": {"t": "24.67 грн/м³", "from": "01.04.2022"},
+        }
+    }
+    parsed = _parse_vodokanal_tariffs(bootstrap)
+    assert parsed["water_supply"] == Decimal("35.45")
+    assert parsed["sewage"] == Decimal("30.06")
     assert parsed["water_subscription"] == Decimal("24.67")
+
+
+def test_parse_vodokanal_tariffs_missing_entries():
+    parsed = _parse_vodokanal_tariffs({"tarify": {"voda": {"t": "35,45 грн/м³"}}})
+    assert parsed == {"water_supply": Decimal("35.45")}
+    assert _parse_vodokanal_tariffs({}) == {}
+
+
+def test_parse_vkcab_price_strips_unit_suffix_and_comma_decimal():
+    assert _parse_vkcab_price("35,45 грн/м³") == Decimal("35.45")
+    assert _parse_vkcab_price("24.67 грн/м³") == Decimal("24.67")
+    assert _parse_vkcab_price(None) is None
+    assert _parse_vkcab_price("") is None
+
+
+def test_extract_vkcab_osr_from_dashboard_markup():
+    html = '<div id="vkcab-app" data-osr="812363" data-agree="0">'
+    assert _extract_vkcab_osr(html) == "812363"
+    assert _extract_vkcab_osr("<div>no app here</div>") is None
 
 
 def test_parse_atp0928_accrued_from_html_table():

@@ -63,6 +63,7 @@ describe("computeCatchUpSuggestion", () => {
     return {
       id: 1,
       effective_from: "2026-08-01",
+      effective_to: null,
       price_per_unit: "300.00",
       cabinet_price_per_unit: null,
       cabinet_price_is_estimated: false,
@@ -121,6 +122,20 @@ describe("computeCatchUpSuggestion", () => {
     const sourceLine = line({
       id: 2,
       effective_from: "2026-06-01",
+      price_per_unit: "300.00",
+      cabinet_price_per_unit: "334.50",
+      cabinet_price_is_estimated: false,
+    });
+    const result = computeCatchUpSuggestion(target, [target, sourceLine]);
+    expect(result).toEqual({ sourcePeriod: "2026-06", amount: 34.5 });
+  });
+
+  it("matches a T-2 source line whose effective_from is earlier than the T-2 month when the tariff was flat", () => {
+    const target = line({ id: 1, effective_from: "2026-08-01", cabinet_price_is_estimated: true });
+    const sourceLine = line({
+      id: 2,
+      effective_from: "2026-04-01",
+      effective_to: null,
       price_per_unit: "300.00",
       cabinet_price_per_unit: "334.50",
       cabinet_price_is_estimated: false,

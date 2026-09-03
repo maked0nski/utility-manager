@@ -40,6 +40,7 @@ export function evaluateCabinetTariff(
 export interface ChargeLineForCatchUp {
   id: number;
   effective_from: string;
+  effective_to?: string | null;
   price_per_unit: string;
   cabinet_price_per_unit?: string | null;
   cabinet_price_is_estimated?: boolean | null;
@@ -58,6 +59,20 @@ function shiftMonthsBack(isoDate: string, months: number): string {
   return `${String(shiftedYear).padStart(4, "0")}-${String(shiftedMonth).padStart(2, "0")}-01`;
 }
 
+// Mirrors the backend's interval semantics for "the line active on a given
+// date" (see `_charge_line_active_on` in tariff_auto_check.py): a line covers
+// `targetDate` when its effective_from is on or before it and its
+// effective_to (if any) is on or after it.
+function isLineActiveOn(line: ChargeLineForCatchUp, targetDate: string): boolean {
+  const from = line.effective_from.slice(0, 10);
+  if (from > targetDate) return false;
+  if (line.effective_to) {
+    const to = line.effective_to.slice(0, 10);
+    if (to < targetDate) return false;
+  }
+  return true;
+}
+
 // Purely derived, nothing persisted: if `targetLine` is an estimate (borrowed
 // from the previous month because the cabinet hadn't posted yet), check
 // whether the line two months earlier turned out to have been undercharged
@@ -68,7 +83,9 @@ export function computeCatchUpSuggestion(
 ): CatchUpSuggestion | null {
   if (!targetLine.cabinet_price_is_estimated) return null;
   const sourceDate = shiftMonthsBack(targetLine.effective_from, 2);
-  const sourceLine = connectionLines.find((candidate) => candidate.effective_from.slice(0, 10) === sourceDate);
+  const sourceLine = connectionLines.find(
+    (candidate) => candidate.id !== targetLine.id && isLineActiveOn(candidate, sourceDate),
+  );
   if (!sourceLine || sourceLine.cabinet_price_is_estimated) return null;
   if (sourceLine.cabinet_price_per_unit == null) return null;
   const shortfall = Number(sourceLine.cabinet_price_per_unit) - Number(sourceLine.price_per_unit);

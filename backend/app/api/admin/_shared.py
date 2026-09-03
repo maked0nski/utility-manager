@@ -206,6 +206,7 @@ def _service_connection_out(row: ApartmentServiceConnection, db: Session) -> Apa
                 is_active=line.is_active,
                 cabinet_price_per_unit=line.cabinet_price_per_unit,
                 cabinet_checked_at=line.cabinet_checked_at,
+                cabinet_price_is_estimated=line.cabinet_price_is_estimated,
                 created_at=line.created_at,
             )
             for line in charge_lines

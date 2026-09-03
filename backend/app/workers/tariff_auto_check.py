@@ -1693,7 +1693,7 @@ def _run_single_setting(
                 connection_id=setting.connection_id,
                 service_catalog_id=setting.service_catalog_id,
             )
-            if current_line is not None:
+            if current_line is not None and current_line.id != previous_line.id:
                 _apply_cabinet_tariff_observation(
                     current_line,
                     candidate_value=estimate,

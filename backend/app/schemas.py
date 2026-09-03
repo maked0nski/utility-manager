@@ -201,6 +201,7 @@ class ConnectionChargeLineOut(BaseModel):
     is_active: bool
     cabinet_price_per_unit: Decimal | None = None
     cabinet_checked_at: datetime | None = None
+    cabinet_price_is_estimated: bool = False
     created_at: datetime
 
 

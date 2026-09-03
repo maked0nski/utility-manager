@@ -1031,6 +1031,10 @@ class AutomationRowOut(BaseModel):
     submit_state_reason: str | None = None
 
 
+class CabinetPasswordRevealOut(BaseModel):
+    cabinet_password: str | None = None
+
+
 class AutomationTemplateCreate(BaseModel):
     code: str = Field(min_length=3, max_length=96)
     name: str = Field(min_length=2, max_length=255)

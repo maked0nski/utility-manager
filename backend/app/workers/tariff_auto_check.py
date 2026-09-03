@@ -705,13 +705,16 @@ def _build_automation_bindings(
     for_submit: bool = False,
     target_date: date | None = None,
 ) -> dict[str, AutomationBindingContext]:
+    effective_provider_id = automation.provider_id or (automation.template.provider_id if automation.template else None)
+    out: dict[str, AutomationBindingContext] = {}
+    if effective_provider_id is None:
+        return out
     connections = db.scalars(
         select(ApartmentServiceConnection)
         .where(ApartmentServiceConnection.apartment_id == automation.apartment_id)
-        .where(ApartmentServiceConnection.automation_id == automation.id)
+        .where(ApartmentServiceConnection.provider_id == effective_provider_id)
         .order_by(ApartmentServiceConnection.id.asc())
     ).all()
-    out: dict[str, AutomationBindingContext] = {}
     for connection in connections:
         if target_date is not None and not _connection_active_on(connection, target_date):
             continue
@@ -1600,6 +1603,8 @@ def run_meter_submit_for_automation(
     now_utc: datetime | None = None,
 ) -> bool:
     now_utc = now_utc or datetime.now(UTC)
+    if not automation.submit_enabled:
+        return False
     apartment = db.get(Apartment, automation.apartment_id)
     timezone_name = (apartment.timezone if apartment else None) or "Europe/Kyiv"
     tz = ZoneInfo(timezone_name)
@@ -1655,16 +1660,8 @@ def run_meter_submit_for_automation(
     for binding in ([vodokanal_driver] if vodokanal_driver else bindings):
         if binding is None:
             continue
-        binding_connections = [
-            connection
-            for connection in db.scalars(
-                select(ApartmentServiceConnection)
-                .where(ApartmentServiceConnection.apartment_id == automation.apartment_id)
-                .where(ApartmentServiceConnection.automation_id == automation.id)
-                .order_by(ApartmentServiceConnection.id.asc())
-            ).all()
-            if connection.id == binding.connection_id
-        ]
+        bound_connection = db.get(ApartmentServiceConnection, binding.connection_id)
+        binding_connections = [bound_connection] if bound_connection is not None else []
         found_reading = False
         for connection in binding_connections:
             charge_lines = db.scalars(

@@ -90,6 +90,7 @@ export function DashboardContent() {
     connectTemplateToApartment,
     disconnectTemplateFromApartment,
     fetchAutomationLogs,
+    revealAutomationPassword,
     runAutomationCycle,
     previewAutomationCycle,
     automationCycleRuns,
@@ -431,6 +432,7 @@ export function DashboardContent() {
                 connectTemplateToApartment={connectTemplateToApartment}
                 disconnectTemplateFromApartment={disconnectTemplateFromApartment}
                 fetchAutomationLogs={fetchAutomationLogs}
+                revealAutomationPassword={revealAutomationPassword}
                 runAutomationCycle={runAutomationCycle}
                 previewAutomationCycle={previewAutomationCycle}
                 automationCycleRuns={automationCycleRuns}

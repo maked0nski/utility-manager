@@ -813,6 +813,10 @@ export function AdminApp() {
   const fetchAutomationLogs = async (automationId: number) => {
     return api<AutomationRunLogItem[]>(`/admin/automations/${automationId}/logs?limit=5`, tok);
   };
+  const revealAutomationPassword = async (automationId: number) => {
+    const result = await api<{ cabinet_password: string | null }>(`/admin/automations/${automationId}/cabinet-password`, tok);
+    return result.cabinet_password;
+  };
   const runAutomationCycle = async () => {
     const result = await api<AutomationCycleRunResult>("/admin/automations/run-cycle", tok, { method: "POST" });
     await automationsQuery.refetch();
@@ -1307,6 +1311,7 @@ export function AdminApp() {
                   connectTemplateToApartment,
                   disconnectTemplateFromApartment,
                   fetchAutomationLogs,
+                  revealAutomationPassword,
                   runAutomationCycle,
                   previewAutomationCycle,
                   automationCycleRuns: automationCycleRunsQuery.data || [],

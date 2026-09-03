@@ -205,6 +205,7 @@ export function AutomationsTab({
   connectTemplateToApartment,
   disconnectTemplateFromApartment,
   fetchAutomationLogs,
+  revealAutomationPassword,
   runAutomationCycle,
   previewAutomationCycle,
   automationCycleRuns,
@@ -251,6 +252,7 @@ export function AutomationsTab({
   ) => Promise<void>;
   disconnectTemplateFromApartment: (row: AutomationItem) => Promise<void>;
   fetchAutomationLogs: (automationId: number) => Promise<AutomationRunLogItem[]>;
+  revealAutomationPassword: (automationId: number) => Promise<string | null>;
   runAutomationCycle: () => Promise<void>;
   previewAutomationCycle: () => Promise<{ items: AutomationCyclePreviewItem[]; message: string }>;
   automationCycleRuns: AutomationCycleRunResult[];
@@ -274,6 +276,8 @@ export function AutomationsTab({
   const [connectTemplate, setConnectTemplate] = useState<AutomationTemplateItem | null>(null);
   const [connectionSaving, setConnectionSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [revealedPassword, setRevealedPassword] = useState<string | null>(null);
+  const [revealingPassword, setRevealingPassword] = useState(false);
   const [logQueryByKey, setLogQueryByKey] = useState<Record<string, string>>({});
   const [logRegisterFilterByKey, setLogRegisterFilterByKey] = useState<Record<string, string>>({});
   const [cycleRunning, setCycleRunning] = useState(false);
@@ -490,6 +494,11 @@ export function AutomationsTab({
   };
 
   const editingRow = useMemo(() => sorted.find((item) => rowKey(item) === editingKey) || null, [editingKey, sorted]);
+  const editingTemplate = useMemo(
+    () => (editingRow ? templates.find((t) => t.id === editingRow.template_id) || null : null),
+    [editingRow, templates],
+  );
+  const editingSupportsMeterSubmit = !!editingTemplate?.supports_meter_submit;
 
   const updateDraft = (row: AutomationItem, patch: Partial<Draft>) => {
     const key = rowKey(row);
@@ -782,6 +791,8 @@ export function AutomationsTab({
                     const submit = submitState(row);
                     const submitTone = submitStateTone(row);
                     const blockedText = missingDataMessage(row);
+                    const rowTemplate = templates.find((t) => t.id === row.template_id) || null;
+                    const rowSupportsMeterSubmit = !!rowTemplate?.supports_meter_submit;
                     const isRunning = !!running[key];
                     const isSaving = !!saving[key];
                     const isExpanded = !!expandedStatus[key];
@@ -804,34 +815,38 @@ export function AutomationsTab({
                           <div className="automation-meta-details"><span className="field-label">Деталі</span><strong>{row.auto_check_message || "—"}</strong></div>
                         </div>
 
-                        <div className="automation-meta-row">
-                          <div>
-                            <span className="field-label">Подача показників</span>
-                            <strong>{submit.label}</strong>
-                          </div>
-                          <div>
-                            <span className="field-label">Вікно подачі</span>
-                            <strong>
-                              {row.submit_enabled
-                                ? `${String(row.submit_window_day_from || 28).padStart(2, "0")} - ${String(row.submit_window_day_to || 3).padStart(2, "0")}`
-                                : "—"}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="field-label">Цільовий період</span>
-                            <strong>{submitPeriodLabel(row)}</strong>
-                          </div>
-                          <div>
-                            <span className="field-label">Наступний submit</span>
-                            <strong>{dt(row.submit_next_at || null)}</strong>
-                          </div>
-                          <div className="automation-meta-details">
-                            <span className="field-label">Стан submit</span>
-                            <span className={`status-pill ${submitTone}`}>{submit.label}</span>
-                          </div>
-                        </div>
+                        {rowSupportsMeterSubmit ? (
+                          <>
+                            <div className="automation-meta-row">
+                              <div>
+                                <span className="field-label">Подача показників</span>
+                                <strong>{submit.label}</strong>
+                              </div>
+                              <div>
+                                <span className="field-label">Вікно подачі</span>
+                                <strong>
+                                  {row.submit_enabled
+                                    ? `${String(row.submit_window_day_from || 28).padStart(2, "0")} - ${String(row.submit_window_day_to || 3).padStart(2, "0")}`
+                                    : "—"}
+                                </strong>
+                              </div>
+                              <div>
+                                <span className="field-label">Цільовий період</span>
+                                <strong>{submitPeriodLabel(row)}</strong>
+                              </div>
+                              <div>
+                                <span className="field-label">Наступний submit</span>
+                                <strong>{dt(row.submit_next_at || null)}</strong>
+                              </div>
+                              <div className="automation-meta-details">
+                                <span className="field-label">Стан submit</span>
+                                <span className={`status-pill ${submitTone}`}>{submit.label}</span>
+                              </div>
+                            </div>
 
-                        <div className="automation-warning">{row.submit_state_reason || "—"}</div>
+                            <div className="automation-warning">{row.submit_state_reason || "—"}</div>
+                          </>
+                        ) : null}
 
                         <button className="automation-status-btn" onClick={() => toggleExpanded(row)}>{lastResultText(row)}</button>
 
@@ -881,13 +896,17 @@ export function AutomationsTab({
                                   ))}
                                   {logsByMode(key, "tariffs").length === 0 ? <li className="helper">Логів нарахувань немає</li> : null}
                                 </ul>
-                                <div className="top-gap"><strong>Подача показників:</strong></div>
-                                <ul>
-                                  {logsByMode(key, "readings").slice(0, 5).map((log) => (
-                                    <li key={log.id}>{dt(log.started_at)} [{log.mode}] {log.status}{log.target_month && log.target_year ? ` • ${logTargetPeriodLabel(log)}` : ""}{log.register_name ? ` • ${log.register_name}` : ""}{log.message ? `: ${log.message}` : ""}</li>
-                                  ))}
-                                  {logsByMode(key, "readings").length === 0 ? <li className="helper">Логів подачі показників немає</li> : null}
-                                </ul>
+                                {rowSupportsMeterSubmit ? (
+                                  <>
+                                    <div className="top-gap"><strong>Подача показників:</strong></div>
+                                    <ul>
+                                      {logsByMode(key, "readings").slice(0, 5).map((log) => (
+                                        <li key={log.id}>{dt(log.started_at)} [{log.mode}] {log.status}{log.target_month && log.target_year ? ` • ${logTargetPeriodLabel(log)}` : ""}{log.register_name ? ` • ${log.register_name}` : ""}{log.message ? `: ${log.message}` : ""}</li>
+                                      ))}
+                                      {logsByMode(key, "readings").length === 0 ? <li className="helper">Логів подачі показників немає</li> : null}
+                                    </ul>
+                                  </>
+                                ) : null}
                               </>
                             )}
                           </div>
@@ -896,7 +915,7 @@ export function AutomationsTab({
                         {blockedText ? <div className="automation-warning">{blockedText}</div> : null}
 
                         <div className="automation-card-actions">
-                          <button className="secondary" onClick={() => setEditingKey(key)}>Налаштувати</button>
+                          <button className="secondary" onClick={() => { setRevealedPassword(null); setEditingKey(key); }}>Налаштувати</button>
                           <button onClick={() => runRow(row)} disabled={!!blockedText || isRunning}>{isRunning ? "Запуск..." : "Запустити"}</button>
                           <button onClick={() => saveRow(row)} disabled={isSaving}>{isSaving ? "Збереження..." : "Зберегти"}</button>
                           {row.automation_id ? <button className="danger" onClick={() => disconnectTemplateFromApartment(row)}>Відключити</button> : null}
@@ -1056,7 +1075,7 @@ export function AutomationsTab({
       {grouped.length === 0 && tab === "connections" && <span className="helper">Налаштування автоматизацій ще не створені.</span>}
 
       {editingRow && (
-        <Modal title={`Автоматизація: ${editingRow.service_name}`} onClose={() => setEditingKey(null)}>
+        <Modal title={`Автоматизація: ${editingRow.service_name}`} onClose={() => { setRevealedPassword(null); setEditingKey(null); }}>
           <div className="automation-modal-grid">
             <label className="check"><input type="checkbox" checked={ensureDraft(editingRow).auto_check_enabled} onChange={(e) => updateDraft(editingRow, { auto_check_enabled: e.target.checked })} />Увімкнути автоперевірку</label>
 
@@ -1066,12 +1085,14 @@ export function AutomationsTab({
               <div className="field"><label className="field-label">Вікно перевірки: день до</label><input type="number" min="1" max="31" value={ensureDraft(editingRow).auto_check_window_day_to} onChange={(e) => updateDraft(editingRow, { auto_check_window_day_to: e.target.value })} /></div>
             </div>
 
-            <div className="automation-schedule-grid">
-              <label className="check"><input type="checkbox" checked={ensureDraft(editingRow).submit_enabled} onChange={(e) => updateDraft(editingRow, { submit_enabled: e.target.checked })} />Увімкнути подачу показників</label>
-              <div className="field"><label className="field-label">Час подачі</label><input type="time" value={ensureDraft(editingRow).submit_time} onChange={(e) => updateDraft(editingRow, { submit_time: e.target.value })} /></div>
-              <div className="field"><label className="field-label">Вікно подачі: день від</label><input type="number" min="1" max="31" value={ensureDraft(editingRow).submit_window_day_from} onChange={(e) => updateDraft(editingRow, { submit_window_day_from: e.target.value })} /></div>
-              <div className="field"><label className="field-label">Вікно подачі: день до</label><input type="number" min="1" max="31" value={ensureDraft(editingRow).submit_window_day_to} onChange={(e) => updateDraft(editingRow, { submit_window_day_to: e.target.value })} /></div>
-            </div>
+            {editingSupportsMeterSubmit ? (
+              <div className="automation-schedule-grid">
+                <label className="check"><input type="checkbox" checked={ensureDraft(editingRow).submit_enabled} onChange={(e) => updateDraft(editingRow, { submit_enabled: e.target.checked })} />Увімкнути подачу показників</label>
+                <div className="field"><label className="field-label">Час подачі</label><input type="time" value={ensureDraft(editingRow).submit_time} onChange={(e) => updateDraft(editingRow, { submit_time: e.target.value })} /></div>
+                <div className="field"><label className="field-label">Вікно подачі: день від</label><input type="number" min="1" max="31" value={ensureDraft(editingRow).submit_window_day_from} onChange={(e) => updateDraft(editingRow, { submit_window_day_from: e.target.value })} /></div>
+                <div className="field"><label className="field-label">Вікно подачі: день до</label><input type="number" min="1" max="31" value={ensureDraft(editingRow).submit_window_day_to} onChange={(e) => updateDraft(editingRow, { submit_window_day_to: e.target.value })} /></div>
+              </div>
+            ) : null}
 
             <div className="automation-source-box">
               <div className="field-label">Джерело даних</div>
@@ -1109,6 +1130,7 @@ export function AutomationsTab({
                   <input
                     type={showPassword ? "text" : "password"}
                     placeholder="Новий пароль"
+                    autoComplete="new-password"
                     value={ensureDraft(editingRow).cabinet_password}
                     onChange={(e) => updateDraft(editingRow, { cabinet_password: e.target.value })}
                   />
@@ -1116,13 +1138,40 @@ export function AutomationsTab({
                     {showPassword ? "Сховати" : "Показати"}
                   </button>
                 </div>
+                {editingRow.cabinet_password_set && editingRow.automation_id ? (
+                  revealedPassword === null ? (
+                    <button
+                      type="button"
+                      className="secondary top-gap"
+                      disabled={revealingPassword}
+                      onClick={async () => {
+                        setRevealingPassword(true);
+                        try {
+                          const value = await revealAutomationPassword(editingRow.automation_id as number);
+                          setRevealedPassword(value ?? "");
+                        } finally {
+                          setRevealingPassword(false);
+                        }
+                      }}
+                    >
+                      {revealingPassword ? "Завантаження..." : "Показати збережений"}
+                    </button>
+                  ) : (
+                    <div className="row-actions top-gap">
+                      <input readOnly value={revealedPassword} />
+                      <button type="button" className="secondary" onClick={() => setRevealedPassword(null)}>
+                        Сховати збережений
+                      </button>
+                    </div>
+                  )
+                ) : null}
               </div>
               <div className="helper">Параметри послуги (тариф, лічильник, тип нарахування) редагуються у вкладці Послуги об'єкта.</div>
-              <button className="secondary" onClick={() => { setEditingKey(null); onOpenTariffs?.(); }}>Відкрити послуги об'єкта</button>
+              <button className="secondary" onClick={() => { setRevealedPassword(null); setEditingKey(null); onOpenTariffs?.(); }}>Відкрити послуги об'єкта</button>
             </div>
 
             <div className="row-actions">
-              <button onClick={async () => { await saveRow(editingRow); setEditingKey(null); }}>Зберегти</button>
+              <button onClick={async () => { await saveRow(editingRow); setRevealedPassword(null); setEditingKey(null); }}>Зберегти</button>
               <button onClick={async () => { await runRow(editingRow); }} disabled={!!missingDataMessage(editingRow) || !!running[rowKey(editingRow)]}>{running[rowKey(editingRow)] ? "Запуск..." : "Запустити зараз"}</button>
             </div>
           </div>
@@ -1162,6 +1211,7 @@ export function AutomationsTab({
               <div className="row-actions">
                 <input
                   type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
                   value={connectionForm.cabinet_password}
                   onChange={(e) => setConnectionForm((s) => ({ ...s, cabinet_password: e.target.value }))}
                 />

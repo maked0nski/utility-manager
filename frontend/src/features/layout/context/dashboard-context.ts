@@ -178,6 +178,7 @@ export type DashboardContextValue = {
   ) => Promise<void>;
   disconnectTemplateFromApartment: (row: AutomationItem) => Promise<void>;
   fetchAutomationLogs: (automationId: number) => Promise<AutomationRunLogItem[]>;
+  revealAutomationPassword: (automationId: number) => Promise<string | null>;
   runAutomationCycle: () => Promise<void>;
   previewAutomationCycle: () => Promise<AutomationCyclePreviewResult>;
   automationCycleRuns: AutomationCycleRunResult[];

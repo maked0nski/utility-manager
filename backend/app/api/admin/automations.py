@@ -10,7 +10,7 @@ from app.api.deps import require_write_access
 from app.core.security import decrypt_text, encrypt_text
 from app.db.session import get_db
 from app.models import Apartment, ApartmentAutomation, ApartmentServiceConnection, AutomationCyclePhaseRun, AutomationCycleRun, AutomationRunLog, AutomationTemplate, ConnectionChargeLine, Meter, MeterReading, Provider
-from app.schemas import ApartmentAutomationOut, ApartmentAutomationUpsert, AutomationCyclePhaseRunOut, AutomationCyclePreviewItem, AutomationCyclePreviewOut, AutomationCycleRunDetailOut, AutomationCycleRunLogDetailOut, AutomationCycleRunOut, AutomationRowOut, AutomationRunLogOut, AutomationTemplateCreate, AutomationTemplateOut, AutomationTemplateUpdate, MeterSubmitDispatchOut, MeterSubmitDispatchRequest, MeterSubmitEvaluateOut
+from app.schemas import ApartmentAutomationOut, ApartmentAutomationUpsert, AutomationCyclePhaseRunOut, AutomationCyclePreviewItem, AutomationCyclePreviewOut, AutomationCycleRunDetailOut, AutomationCycleRunLogDetailOut, AutomationCycleRunOut, AutomationRowOut, AutomationRunLogOut, AutomationTemplateCreate, AutomationTemplateOut, AutomationTemplateUpdate, CabinetPasswordRevealOut, MeterSubmitDispatchOut, MeterSubmitDispatchRequest, MeterSubmitEvaluateOut
 import re
 from ._shared import _infer_cycle_log_phase, _prev_month, _preview_reason
 
@@ -208,6 +208,17 @@ def delete_apartment_automation(apartment_id: int, template_id: int, db: Session
     db.commit()
     return {"status": "deleted"}
 
+@router.get(
+    "/automations/{automation_id}/cabinet-password",
+    response_model=CabinetPasswordRevealOut,
+    dependencies=[Depends(require_write_access)],
+)
+def reveal_automation_cabinet_password(automation_id: int, db: Session = Depends(get_db)):
+    automation = db.get(ApartmentAutomation, automation_id)
+    if automation is None:
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    return CabinetPasswordRevealOut(cabinet_password=decrypt_text(automation.cabinet_password_encrypted))
+
 @router.get("/automations/{automation_id}/logs", response_model=list[AutomationRunLogOut])
 def automation_logs(automation_id: int, limit: int = 5, db: Session = Depends(get_db)):
     rows = db.scalars(
@@ -252,7 +263,7 @@ def run_automation_once(automation_id: int, mode: str = "full", db: Session = De
     try:
         if run_mode in {"full", "tariffs"}:
             run_tariff_auto_check_for_automation(db, automation=automation, now_utc=datetime.now(UTC))
-        if run_mode in {"full", "readings"}:
+        if run_mode in {"full", "readings"} and automation.submit_enabled:
             run_meter_submit_for_automation(db, automation=automation, now_utc=datetime.now(UTC))
     except Exception:
         db.refresh(automation)

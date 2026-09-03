@@ -197,6 +197,8 @@ class ConnectionChargeLineOut(BaseModel):
     effective_from: date
     effective_to: date | None = None
     is_active: bool
+    cabinet_price_per_unit: Decimal | None = None
+    cabinet_checked_at: datetime | None = None
     created_at: datetime
 
 

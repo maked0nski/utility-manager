@@ -220,6 +220,8 @@ export interface ConnectionChargeLineItem {
   effective_from: string;
   effective_to?: string | null;
   is_active: boolean;
+  cabinet_price_per_unit?: string | null;
+  cabinet_checked_at?: string | null;
   created_at: string;
 }
 

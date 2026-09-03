@@ -57,6 +57,7 @@ def _ensure_apartment_profile_columns(db: Session) -> None:
         "entrance": "ALTER TABLE apartments ADD COLUMN entrance VARCHAR(32) NULL",
         "floor": "ALTER TABLE apartments ADD COLUMN floor VARCHAR(32) NULL",
         "room_count": "ALTER TABLE apartments ADD COLUMN room_count INTEGER NULL",
+        "cabinet_markup_percent": "ALTER TABLE apartments ADD COLUMN cabinet_markup_percent NUMERIC(5, 2) NULL",
     }
     for column_name, ddl in apartment_columns.items():
         if _has_column(db, "apartments", column_name):

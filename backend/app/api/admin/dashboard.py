@@ -125,6 +125,7 @@ def apartment_detail(apartment_id: int, year: int | None = None, month: int | No
         longitude=apartment.longitude,
         google_maps_url=apartment.google_maps_url,
         timezone=apartment.timezone or "Europe/Kyiv",
+        cabinet_markup_percent=apartment.cabinet_markup_percent,
         location_note=apartment.location_note,
         object_notes=apartment.object_notes,
         tenant=_tenant_out(tenant),

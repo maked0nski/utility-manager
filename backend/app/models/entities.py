@@ -140,6 +140,7 @@ class Apartment(Base):
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
     timezone: Mapped[str] = mapped_column(String(64), default="Europe/Kyiv")
+    cabinet_markup_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     location_note: Mapped[str | None] = mapped_column(String(255), default=None)
     object_notes: Mapped[str | None] = mapped_column(Text, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

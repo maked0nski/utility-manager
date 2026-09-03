@@ -260,6 +260,7 @@ def _apply_apartment_profile(apartment: Apartment, payload: ApartmentCreate) -> 
     apartment.latitude = payload.latitude
     apartment.longitude = payload.longitude
     apartment.timezone = payload.timezone or "Europe/Kyiv"
+    apartment.cabinet_markup_percent = payload.cabinet_markup_percent
     apartment.location_note = _clean_optional_text(payload.location_note)
     apartment.object_notes = _clean_optional_text(payload.object_notes)
     return full_address

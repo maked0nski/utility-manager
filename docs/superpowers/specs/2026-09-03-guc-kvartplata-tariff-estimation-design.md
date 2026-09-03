@@ -54,44 +54,32 @@
 
 ## Архітектура
 
-### 1. Глобальна націнка — нове налаштування
+### 1. Націнка — поле на об'єкті нерухомості (`Apartment`), не глобальна
 
-Нова таблиця-singleton `system_settings` (одна колонка, один рядок `id=1`):
-
-```python
-class SystemSettings(Base):
-    __tablename__ = "system_settings"
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    cabinet_markup_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
-```
-
-Міграція (у стилі існуючого `_ensure_connection_charge_lines_table`, з реєстрацією у
-`run_startup_migrations()` — інакше повторюємо інцидент з `cabinet_price_per_unit`,
-див. коміти `cb1ec0f`→`5d0fbc4`):
+Уточнення власника: націнка різна для різних об'єктів (наприклад, один об'єкт — 10%,
+інший — 5%), тож це **не** глобальне налаштування, а нове nullable-поле на
+`Apartment`, за тим самим патерном, що й уже наявні `floor`/`timezone`:
 
 ```python
-def _ensure_system_settings_table(db: Session) -> None:
-    if not _has_table(db, "system_settings"):
-        db.execute(text(
-            """
-            CREATE TABLE system_settings (
-                id INTEGER NOT NULL PRIMARY KEY,
-                cabinet_markup_percent NUMERIC(5, 2) NOT NULL DEFAULT 0.00
-            )
-            """
-        ))
-        db.execute(text("INSERT INTO system_settings (id, cabinet_markup_percent) VALUES (1, 0.00)"))
-        db.commit()
+cabinet_markup_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
 ```
 
-API: `GET /admin/settings` і `PATCH /admin/settings` (той самий
-`require_write_access`/admin-guard, що й інші `/admin/*`), схема
-`{ cabinet_markup_percent: str }`.
+Міграція — звичайний `ALTER TABLE apartments ADD COLUMN cabinet_markup_percent
+NUMERIC(5, 2) NOT NULL DEFAULT 0.00`, у стилі вже наявного запису для `floor`
+(`backend/app/db/migrations.py:58`), з реєстрацією у `run_startup_migrations()` —
+інакше повторюємо інцидент з `cabinet_price_per_unit` (коміти `cb1ec0f`→`5d0fbc4`).
 
-Фронтенд: нове поле у налаштуваннях адміна (розширення `ProfileSettingsModal.tsx`
-новою секцією, видимою лише адміну) — числовий інпут з підписом типу "Мінімальна
-націнка над тарифом з кабінету, %". Значення підвантажується разом з профілем і
-кешується так само, як інші довідники.
+Бекенд: додається у `_update_apartment` (`backend/app/api/admin/_shared.py:258`,
+поруч з `apartment.floor`/`apartment.timezone`) і в схему створення/оновлення
+апартаменту та в `ApartmentOut`/dashboard-серіалізацію (`api/admin/dashboard.py:122`,
+поруч з `floor=apartment.floor`) — жодного нового ендпоінта не потрібно, лише нове
+поле в уже наявних `PATCH /admin/apartments/{id}` та відповіді.
+
+Фронтенд: нове поле в `PropertyDrawer.tsx` (форма `ap`, поруч із `floor` —
+рядки ~188–384) — підпис "Націнка над тарифом з кабінету, %", числовий інпут,
+дефолт порожній/0. Значення приходить разом з рештою даних об'єкта, які вкладка
+"Розрахунок" уже підвантажує для поточного апартаменту (той самий шлях, яким туди
+потрапляють `floor`/`timezone` сьогодні) — окремого запиту не треба.
 
 `cabinet-tariff.ts`: `FLOOR_MULTIPLIER = 1.1` прибирається; `evaluateCabinetTariff`
 приймає `markupPercent: number` параметром (замість константи):
@@ -109,11 +97,14 @@ export function evaluateCabinetTariff(
 }
 ```
 
-Виклики в `CalculationTab.tsx` передають значення з нового налаштування. Це змінює
-поведінку **для всіх провайдерів одразу** (ATP-0928, Vodokanal, GUC) — не лише GUC,
-оскільки бейдж спільний. Одразу після деплою значення `0%` тимчасово вимикає
-floor-попередження всюди, доки адмін не виставить `10%` вручну — про це варто
-попередити в PR/чеклисті деплою.
+Виклики в `CalculationTab.tsx` передають `apartment.cabinet_markup_percent` поточного
+об'єкта. Це змінює поведінку floor-бейджа **для всіх провайдерів одразу в межах
+одного об'єкта** (ATP-0928, Vodokanal, GUC), оскільки бейдж спільний — але тепер
+кожен об'єкт має власне значення, а не одне на всю систему. Одразу після деплою в
+усіх об'єктів `cabinet_markup_percent = 0.00` (дефолт нової колонки), тобто
+floor-попередження тимчасово вимкнене всюди, доки адмін не виставить потрібний %
+для кожного об'єкта окремо (наприклад 10% для одного, 5% — для іншого) — про це
+варто попередити в PR/чеклисті деплою.
 
 ### 2. Оцінка "з попереднього місяця" (borrow fallback)
 
@@ -234,8 +225,8 @@ suggestedPrice = ceilToCents((cabinetPrice + (catchUp?.amount ?? 0)) * (1 + mark
 - Unit-тест на чисту функцію дорахунку T-2: кейси "недобір є" (`shortfall > 0`),
   "переплата чи точний збіг" (`shortfall <= 0` → підказки нема), "T-2 рядок сам
   оцінка" (пропустити), "T-2 рядка нема" (пропустити).
-- Regression: `system_settings` міграція ідемпотентна (повторний запуск
-  `run_startup_migrations()` не дублює рядок/колонку).
+- Regression: міграція `apartments.cabinet_markup_percent` ідемпотентна (повторний
+  запуск `run_startup_migrations()` не дублює колонку).
 
 **Frontend:**
 - `cabinet-tariff.test.ts`: `evaluateCabinetTariff` з різними `markupPercent`

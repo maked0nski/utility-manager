@@ -1004,7 +1004,7 @@ class AutomationRowOut(BaseModel):
     personal_account: str | None = None
     cabinet_url: str | None = None
     cabinet_login: str | None = None
-    cabinet_password: str | None = None
+    cabinet_password_set: bool = False
     auto_check_enabled: bool = False
     auto_check_time: str = "09:00"
     auto_check_timezone: str = "Europe/Kyiv"
@@ -1095,7 +1095,7 @@ class ApartmentAutomationOut(BaseModel):
     personal_account: str | None = None
     cabinet_url: str | None = None
     cabinet_login: str | None = None
-    cabinet_password: str | None = None
+    cabinet_password_set: bool = False
     is_enabled: bool = True
     accrual_enabled: bool = True
     accrual_time: str = "09:00"

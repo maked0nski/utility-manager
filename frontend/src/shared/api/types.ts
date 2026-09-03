@@ -486,7 +486,7 @@ export interface AutomationItem {
   personal_account?: string | null;
   cabinet_url?: string | null;
   cabinet_login?: string | null;
-  cabinet_password?: string | null;
+  cabinet_password_set?: boolean;
   auto_check_enabled: boolean;
   auto_check_time: string;
   auto_check_timezone: string;

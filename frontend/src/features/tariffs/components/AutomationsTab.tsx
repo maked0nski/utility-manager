@@ -186,7 +186,7 @@ const lastResultText = (row: AutomationItem) => {
 };
 
 const missingDataMessage = (row: AutomationItem) => {
-  const missingPassword = !(row.cabinet_password || "").trim();
+  const missingPassword = !row.cabinet_password_set;
   if (missingPassword) return "Автоматизація неможлива: бракує пароля у кабінеті.";
   const missingCore = !(row.cabinet_url || "").trim() || !(row.cabinet_login || "").trim();
   if (missingCore) return "Автоматизація обмежена: перевірте URL або логін.";
@@ -331,7 +331,7 @@ export function AutomationsTab({
       submit_time: row.submit_time || "09:00",
       submit_window_day_from: String(row.submit_window_day_from || 28),
       submit_window_day_to: String(row.submit_window_day_to || 3),
-      cabinet_password: row.cabinet_password || "",
+      cabinet_password: "",
     };
 
   const sorted = useMemo(
@@ -1098,9 +1098,17 @@ export function AutomationsTab({
               </div>
               <div className="field">
                 <label className="field-label">Пароль</label>
+                <div className="helper">
+                  {ensureDraft(editingRow).cabinet_password
+                    ? "Буде збережено новий пароль після натискання «Зберегти»."
+                    : editingRow.cabinet_password_set
+                      ? "Пароль встановлено. Залиште поле порожнім, щоб не змінювати."
+                      : "Пароль не встановлено."}
+                </div>
                 <div className="row-actions">
                   <input
                     type={showPassword ? "text" : "password"}
+                    placeholder="Новий пароль"
                     value={ensureDraft(editingRow).cabinet_password}
                     onChange={(e) => updateDraft(editingRow, { cabinet_password: e.target.value })}
                   />

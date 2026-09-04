@@ -130,6 +130,13 @@ HTML), а не до Vodokanal (публічний bootstrap JSON без логі
 1. `httpx.Client(follow_redirects=True)` → `GET /login`, знайти форму (email+password,
    звичайний HTML-логін, не Google OAuth) → `POST` на action форми з `cabinet_login`/
    `cabinet_password` (розшифрованим через `decrypt_text`, як і для інших провайдерів).
+
+   **Ендпоінт підтверджено наживо (2026-09-04, через `read_network_requests` під час
+   реального логіну за email+пароль, вкладка "За Email"):** форма шле
+   `POST https://my.gas.ua/login` (той самий шлях, що й GET-сторінка форми), відповідь
+   200, далі `GET /home` під тими ж cookies. Точні `name`-атрибути полів email/пароль
+   не підтверджені (доступний лише рендерений DOM, не сирий HTML) — перед імплементацією
+   зняти сирий `httpx`-GET `/login` і знайти реальні `name` полів.
 2. `GET /home` під тією ж сесією (cookies) → якщо в HTML знову форма логіну — авторизація
    не вдалась (аналогічно перевірці `'name="log"' in html` в `_fetch_atp0928_cabinet_html`).
 3. Розпарсити з блоку "Мої умови" значення "Ціна за 1 куб. м, грн" (число з крапкою,

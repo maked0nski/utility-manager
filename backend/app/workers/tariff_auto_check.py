@@ -1292,6 +1292,8 @@ def run_tariff_auto_checks(db: Session, *, trigger_mode: str = "scheduled") -> d
     ).all()
     accrual_started_at = datetime.now(UTC)
     for automation in automations:
+        if trigger_mode != "manual" and automation.template is not None and not automation.template.cron_eligible:
+            continue
         run_tariff_auto_check_for_automation(db, automation=automation, now_utc=now_utc)
         processed_accrual_automations += 1
     accrual_finished_at = datetime.now(UTC)
@@ -1318,6 +1320,8 @@ def run_tariff_auto_checks(db: Session, *, trigger_mode: str = "scheduled") -> d
     ).all()
     submit_started_at = datetime.now(UTC)
     for automation in submit_automations:
+        if trigger_mode != "manual" and automation.template is not None and not automation.template.cron_eligible:
+            continue
         if run_meter_submit_for_automation(db, automation=automation, now_utc=now_utc):
             submitted_readings += 1
         processed_submit_automations += 1

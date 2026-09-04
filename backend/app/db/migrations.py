@@ -91,6 +91,13 @@ def _ensure_automation_run_log_target_period_columns(db: Session) -> None:
         db.commit()
 
 
+def _ensure_automation_template_cron_eligible_column(db: Session) -> None:
+    if _has_column(db, "automation_templates", "cron_eligible"):
+        return
+    db.execute(text("ALTER TABLE automation_templates ADD COLUMN cron_eligible BOOLEAN NOT NULL DEFAULT TRUE"))
+    db.commit()
+
+
 def _ensure_electricity_meter_plans_table(db: Session) -> None:
     inspector = inspect(db.bind)
     if "electricity_meter_plans" in inspector.get_table_names():
@@ -893,6 +900,7 @@ def run_startup_migrations(db: Session) -> None:
     _ensure_apartment_automation_submit_period_columns(db)
     _ensure_automation_run_log_register_column(db)
     _ensure_automation_run_log_target_period_columns(db)
+    _ensure_automation_template_cron_eligible_column(db)
     _ensure_meter_types_table(db)
     _ensure_provider_catalog_extensions(db)
     _ensure_service_catalog_table(db)

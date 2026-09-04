@@ -141,6 +141,7 @@ export type DashboardContextValue = {
     description: string | null;
     supports_accrual: boolean;
     supports_meter_submit: boolean;
+    cron_eligible: boolean;
     is_active: boolean;
   }) => Promise<void>;
   updateAutomationTemplate: (
@@ -154,6 +155,7 @@ export type DashboardContextValue = {
       description: string | null;
       supports_accrual: boolean;
       supports_meter_submit: boolean;
+      cron_eligible: boolean;
       is_active: boolean;
     },
   ) => Promise<void>;

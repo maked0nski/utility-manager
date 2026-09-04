@@ -49,6 +49,7 @@ def list_automation_templates(db: Session = Depends(get_db)):
                 description=row.description,
                 supports_accrual=row.supports_accrual,
                 supports_meter_submit=row.supports_meter_submit,
+                cron_eligible=row.cron_eligible,
                 is_active=row.is_active,
                 created_at=row.created_at,
             )
@@ -67,6 +68,7 @@ def _automation_template_out(row: AutomationTemplate) -> AutomationTemplateOut:
         description=row.description,
         supports_accrual=row.supports_accrual,
         supports_meter_submit=row.supports_meter_submit,
+        cron_eligible=row.cron_eligible,
         is_active=row.is_active,
         created_at=row.created_at,
     )
@@ -90,6 +92,7 @@ def create_automation_template(payload: AutomationTemplateCreate, db: Session = 
         description=payload.description,
         supports_accrual=payload.supports_accrual,
         supports_meter_submit=payload.supports_meter_submit,
+        cron_eligible=payload.cron_eligible,
         is_active=payload.is_active,
     )
     db.add(row)
@@ -121,6 +124,7 @@ def update_automation_template(template_id: int, payload: AutomationTemplateUpda
     row.description = payload.description
     row.supports_accrual = payload.supports_accrual
     row.supports_meter_submit = payload.supports_meter_submit
+    row.cron_eligible = payload.cron_eligible
     row.is_active = payload.is_active
     try:
         db.commit()

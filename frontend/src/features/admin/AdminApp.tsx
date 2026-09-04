@@ -729,6 +729,7 @@ export function AdminApp() {
     description: string | null;
     supports_accrual: boolean;
     supports_meter_submit: boolean;
+    cron_eligible: boolean;
     is_active: boolean;
   }) => {
     await api("/admin/automation-templates", tok, {
@@ -749,6 +750,7 @@ export function AdminApp() {
       description: string | null;
       supports_accrual: boolean;
       supports_meter_submit: boolean;
+      cron_eligible: boolean;
       is_active: boolean;
     },
   ) => {

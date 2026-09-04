@@ -36,6 +36,7 @@ type TemplateForm = {
   description: string;
   supports_accrual: boolean;
   supports_meter_submit: boolean;
+  cron_eligible: boolean;
   is_active: boolean;
 };
 
@@ -228,6 +229,7 @@ export function AutomationsTab({
     description: string | null;
     supports_accrual: boolean;
     supports_meter_submit: boolean;
+    cron_eligible: boolean;
     is_active: boolean;
   }) => Promise<void>;
   updateTemplate: (
@@ -241,6 +243,7 @@ export function AutomationsTab({
       description: string | null;
       supports_accrual: boolean;
       supports_meter_submit: boolean;
+      cron_eligible: boolean;
       is_active: boolean;
     },
   ) => Promise<void>;
@@ -303,6 +306,7 @@ export function AutomationsTab({
     description: "",
     supports_accrual: true,
     supports_meter_submit: false,
+    cron_eligible: true,
     is_active: true,
   });
   const [connectionForm, setConnectionForm] = useState<ConnectionForm>({
@@ -580,6 +584,7 @@ export function AutomationsTab({
       description: "",
       supports_accrual: true,
       supports_meter_submit: false,
+      cron_eligible: true,
       is_active: true,
     });
   };
@@ -595,6 +600,7 @@ export function AutomationsTab({
       description: tpl.description || "",
       supports_accrual: !!tpl.supports_accrual,
       supports_meter_submit: !!tpl.supports_meter_submit,
+      cron_eligible: tpl.cron_eligible === undefined ? true : !!tpl.cron_eligible,
       is_active: !!tpl.is_active,
     });
   };
@@ -645,6 +651,7 @@ export function AutomationsTab({
       description: templateForm.description.trim() || null,
       supports_accrual: !!templateForm.supports_accrual,
       supports_meter_submit: !!templateForm.supports_meter_submit,
+      cron_eligible: !!templateForm.cron_eligible,
       is_active: !!templateForm.is_active,
     };
     try {
@@ -1042,6 +1049,7 @@ export function AutomationsTab({
             <input placeholder="Опис" value={templateForm.description} onChange={(e) => setTemplateForm((s) => ({ ...s, description: e.target.value }))} />
             <label className="check"><input type="checkbox" checked={templateForm.supports_accrual} onChange={(e) => setTemplateForm((s) => ({ ...s, supports_accrual: e.target.checked }))} />Підтримує нарахування</label>
             <label className="check"><input type="checkbox" checked={templateForm.supports_meter_submit} onChange={(e) => setTemplateForm((s) => ({ ...s, supports_meter_submit: e.target.checked }))} />Підтримує подачу показників</label>
+            <label className="check"><input type="checkbox" checked={templateForm.cron_eligible} onChange={(e) => setTemplateForm((s) => ({ ...s, cron_eligible: e.target.checked }))} />Запускати за годинним розкладом (крон)</label>
             <label className="check"><input type="checkbox" checked={templateForm.is_active} onChange={(e) => setTemplateForm((s) => ({ ...s, is_active: e.target.checked }))} />Активний шаблон</label>
           </div>
           <div className="automation-window-preview top-gap">

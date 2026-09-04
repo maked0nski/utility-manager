@@ -260,6 +260,7 @@ class AutomationTemplate(Base):
     supports_accrual: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_meter_submit: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    cron_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     provider: Mapped[Provider | None] = relationship(back_populates="automation_templates")

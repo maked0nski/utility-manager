@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, ROUND_CEILING
+from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from html import unescape
 import json
 import re
 import socket
 import time
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -363,6 +363,25 @@ def _parse_atp0928_tariff_from_html(html: str, service_code: str | None) -> Deci
     return candidate_rows[0][1]
 
 
+def _parse_gas_ua_price_from_html(html: str) -> Decimal | None:
+    match = re.search(r'<personal-accounts-dropdown\s+[^>]*user_info="([^"]*)"', html)
+    if match is None:
+        return None
+    try:
+        user_info = json.loads(unescape(match.group(1)))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(user_info, dict):
+        return None
+    raw = user_info.get("single_price")
+    if not raw:
+        return None
+    try:
+        return Decimal(str(raw))
+    except InvalidOperation:
+        return None
+
+
 def _round_up_to_half(value: Decimal) -> Decimal:
     return (value * Decimal("2")).to_integral_value(rounding=ROUND_CEILING) / Decimal("2")
 
@@ -527,6 +546,20 @@ def _is_atp0928_setting(setting: BindingSetting) -> bool:
         ]
     ).casefold()
     return ("atp0928.if.ua" in haystack) or ("атп-0928" in haystack) or (setting.service_code == ATP0928_SERVICE_CODE)
+
+
+def _is_gas_ua_setting(setting: BindingSetting) -> bool:
+    adapter_code = _provider_adapter_code(setting)
+    if adapter_code == "gas_ua_supply":
+        return True
+    haystack = " ".join(
+        [
+            setting.provider_company or "",
+            setting.cabinet_url or "",
+            setting.service_code or "",
+        ]
+    ).casefold()
+    return "my.gas.ua" in haystack
 
 
 def _connection_active_on(connection: ApartmentServiceConnection, target_date: date) -> bool:
@@ -748,6 +781,121 @@ def _fetch_atp0928_cabinet_html(
         if 'name="log"' in html and 'name="pwd"' in html:
             return None, "ATP-0928 authorization failed (invalid login/password)"
         return html, None
+
+
+GAS_UA_LOGIN_URL = "https://my.gas.ua/login"
+GAS_UA_HOME_URL = "https://my.gas.ua/home"
+
+
+def _fetch_gas_ua_home_html(
+    *,
+    cabinet_login: str,
+    cabinet_password: str,
+) -> tuple[str | None, str | None]:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "uk,en-US;q=0.9,en;q=0.8",
+    }
+    with httpx.Client(follow_redirects=True, timeout=20.0, headers=headers) as client:
+        login_page = client.get(GAS_UA_LOGIN_URL)
+        if login_page.status_code != 200:
+            return None, f"my.gas.ua login page HTTP {login_page.status_code}"
+        csrf_match = re.search(r'name="csrf-token" content="([^"]*)"', login_page.text)
+        csrf_token = csrf_match.group(1) if csrf_match else ""
+        xsrf_cookie = client.cookies.get("XSRF-TOKEN")
+        if not xsrf_cookie:
+            return None, "my.gas.ua login page did not set XSRF-TOKEN cookie"
+        xsrf_token = unquote(xsrf_cookie)
+
+        post_headers = {
+            "X-XSRF-TOKEN": xsrf_token,
+            "X-CSRF-TOKEN": csrf_token,
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Inertia": "true",
+            "X-Inertia-Version": "1",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Referer": GAS_UA_LOGIN_URL,
+            "Origin": "https://my.gas.ua",
+        }
+        auth = client.post(
+            GAS_UA_LOGIN_URL,
+            headers=post_headers,
+            json={"login": cabinet_login, "password": cabinet_password, "remember": False},
+        )
+        if auth.status_code != 200:
+            return None, f"my.gas.ua authorization failed (HTTP {auth.status_code})"
+
+        dashboard = client.get(GAS_UA_HOME_URL)
+        if dashboard.status_code != 200:
+            return None, f"my.gas.ua cabinet HTTP {dashboard.status_code}"
+        html_text = dashboard.text
+        if "personal-accounts-dropdown" not in html_text:
+            return None, "my.gas.ua authorization failed (session not authenticated)"
+        return html_text, None
+
+
+def _run_gas_ua(
+    db: Session,
+    *,
+    setting: BindingSetting,
+    now_utc: datetime,
+    local_now: datetime,
+) -> None:
+    cabinet_login = (setting.cabinet_login or "").strip()
+    cabinet_password = decrypt_text(setting.cabinet_password_encrypted) or ""
+    if not cabinet_login or not cabinet_password:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "cabinet credentials are missing"
+        setting.auto_check_last_checked_at = now_utc
+        return
+
+    try:
+        html_text, error = _fetch_gas_ua_home_html(
+            cabinet_login=cabinet_login,
+            cabinet_password=cabinet_password,
+        )
+    except (httpx.HTTPError, OSError, socket.gaierror) as exc:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = f"my.gas.ua network error: {exc}"[:255]
+        setting.auto_check_last_checked_at = now_utc
+        return
+
+    setting.auto_check_last_checked_at = now_utc
+    if error or html_text is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = (error or "my.gas.ua fetch failed")[:255]
+        return
+
+    price = _parse_gas_ua_price_from_html(html_text)
+    if price is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "На сторінці /home не знайдено single_price"
+        return
+
+    period_start = _month_start(*_prev_month(local_now.year, local_now.month)).date()
+    current_line = _service_charge_line_for_period(
+        db,
+        apartment_id=setting.apartment_id,
+        service_name=setting.service_name,
+        period_start=period_start,
+        connection_id=setting.connection_id,
+        service_catalog_id=setting.service_catalog_id,
+    )
+    if current_line is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "Current charge line for period not found"
+        return
+
+    _apply_cabinet_tariff_observation(current_line, candidate_value=price, checked_at=now_utc)
+    setting.auto_check_completed_for_period = True
+    setting.auto_check_last_value_raw = price.quantize(Decimal("0.0001"))
+    setting.auto_check_last_value_rounded = price.quantize(Decimal("0.01"))
+    setting.auto_check_status = "updated"
+    setting.auto_check_message = f"Кабінет: Ціна за 1 куб. м = {price.quantize(Decimal('0.01'))} грн"
 
 
 def _run_atp0928(
@@ -1292,6 +1440,8 @@ def run_tariff_auto_checks(db: Session, *, trigger_mode: str = "scheduled") -> d
     ).all()
     accrual_started_at = datetime.now(UTC)
     for automation in automations:
+        if trigger_mode != "manual" and automation.template is not None and not automation.template.cron_eligible:
+            continue
         run_tariff_auto_check_for_automation(db, automation=automation, now_utc=now_utc)
         processed_accrual_automations += 1
     accrual_finished_at = datetime.now(UTC)
@@ -1318,6 +1468,8 @@ def run_tariff_auto_checks(db: Session, *, trigger_mode: str = "scheduled") -> d
     ).all()
     submit_started_at = datetime.now(UTC)
     for automation in submit_automations:
+        if trigger_mode != "manual" and automation.template is not None and not automation.template.cron_eligible:
+            continue
         if run_meter_submit_for_automation(db, automation=automation, now_utc=now_utc):
             submitted_readings += 1
         processed_submit_automations += 1
@@ -1634,6 +1786,10 @@ def _run_single_setting(
             local_now=local_now,
             force_mode=mode,
         )
+        return
+
+    if _is_gas_ua_setting(setting):
+        _run_gas_ua(db, setting=setting, now_utc=now_utc, local_now=local_now)
         return
 
     if mode == "readings":

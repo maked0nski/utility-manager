@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, ROUND_CEILING
+from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from html import unescape
 import json
 import re
@@ -361,6 +361,23 @@ def _parse_atp0928_tariff_from_html(html: str, service_code: str | None) -> Deci
         if "багатоквартир" in label:
             return value
     return candidate_rows[0][1]
+
+
+def _parse_gas_ua_price_from_html(html: str) -> Decimal | None:
+    match = re.search(r'<personal-accounts-dropdown\s+[^>]*user_info="([^"]*)"', html)
+    if match is None:
+        return None
+    try:
+        user_info = json.loads(unescape(match.group(1)))
+    except (json.JSONDecodeError, ValueError):
+        return None
+    raw = user_info.get("single_price")
+    if not raw:
+        return None
+    try:
+        return Decimal(str(raw))
+    except InvalidOperation:
+        return None
 
 
 def _round_up_to_half(value: Decimal) -> Decimal:

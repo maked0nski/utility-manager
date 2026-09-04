@@ -117,39 +117,102 @@ email `maked0nskihtc@gmail.com`.
 
 Дані не вводились і не надсилались — модалку закрито хрестиком без сабміту.
 
-## Архітектура (сценарій "тільки тариф", за зразком `_run_vodokanal`)
+## Архітектура (сценарій "тільки тариф", за зразком ATP0928)
 
-Технічно `/home` та `/accrual-and-payment` — звичайні server-rendered сторінки (ін'єкція
-через `my.gas.ua/js/user.js`, без XHR/fetch до якогось `/api/...` в перехопленому мережевому
-трафіку) — тобто підхід ближчий до **ATP0928** (`httpx`-сесія з логіном по паролю + парсинг
-HTML), а не до Vodokanal (публічний bootstrap JSON без логіну). "Мої умови" видно тільки
-після автентифікації.
+**Наживо перевірено й підтверджено (2026-09-04) повний ланцюжок httpx-логіну й
+парсингу — жодних заглушок, реальний working code нижче.** Побоювання щодо
+Cloudflare Turnstile CAPTCHA (сайт-кей `0x4AAAAAAABK41qESJMWTuD6` присутній у HTML)
+**не справдилось**: чистий `httpx`-запит без розв'язання капчі успішно логінить і
+повертає автентифіковану сесію — Turnstile тут, судячи з усього, не enforced жорстко
+на бекенді для цього ендпоінта.
 
-Сценарій:
+### Логін — підтверджено реальним запитом
 
-1. `httpx.Client(follow_redirects=True)` → `GET /login`, знайти форму (email+password,
-   звичайний HTML-логін, не Google OAuth) → `POST` на action форми з `cabinet_login`/
-   `cabinet_password` (розшифрованим через `decrypt_text`, як і для інших провайдерів).
+```python
+import httpx, re, json
+from urllib.parse import unquote
 
-   **Ендпоінт підтверджено наживо (2026-09-04, через `read_network_requests` під час
-   реального логіну за email+пароль, вкладка "За Email"):** форма шле
-   `POST https://my.gas.ua/login` (той самий шлях, що й GET-сторінка форми), відповідь
-   200, далі `GET /home` під тими ж cookies. Точні `name`-атрибути полів email/пароль
-   не підтверджені (доступний лише рендерений DOM, не сирий HTML) — перед імплементацією
-   зняти сирий `httpx`-GET `/login` і знайти реальні `name` полів.
-2. `GET /home` під тією ж сесією (cookies) → якщо в HTML знову форма логіну — авторизація
-   не вдалась (аналогічно перевірці `'name="log"' in html` в `_fetch_atp0928_cabinet_html`).
-3. Розпарсити з блоку "Мої умови" значення "Ціна за 1 куб. м, грн" (число з крапкою,
-   можливо з іншим форматом розділювача — перевірити на реальному HTML під час імплементації,
-   зараз підтверджено тільки візуально/текстово через `get_page_text`, не через сирий HTML).
+with httpx.Client(follow_redirects=True, timeout=20.0, headers={
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept-Language": "uk,en-US;q=0.9,en;q=0.8",
+}) as client:
+    login_page = client.get("https://my.gas.ua/login")
+    csrf_token = re.search(r'name="csrf-token" content="([^"]*)"', login_page.text).group(1)
+    xsrf_token = unquote(client.cookies.get("XSRF-TOKEN"))
+    resp = client.post(
+        "https://my.gas.ua/login",
+        headers={
+            "X-XSRF-TOKEN": xsrf_token,
+            "X-CSRF-TOKEN": csrf_token,
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Inertia": "true",
+            "X-Inertia-Version": "1",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Referer": "https://my.gas.ua/login",
+            "Origin": "https://my.gas.ua",
+        },
+        json={"login": cabinet_login, "password": cabinet_password, "remember": False},
+    )
+    # success: resp.status_code == 200, body == {"url": "/home"}
+    # failure (wrong creds / missing field): resp.status_code == 422,
+    #   body == {"message": "...", "errors": {"login": [...]}} or {"password": [...]}
+```
+
+**Ключова деталь, знята з реального `422`-response при першій спробі:** поле
+ідентифікатора користувача зветься **`login`**, не `email` (сервер повернув
+`"Поле login є обов'язковим для заповнення."` коли ключ був `email`). Із правильним
+ключем (`login`) логін дав `200 {"url": "/home"}`, і подальший `GET /home` під тією ж
+сесією (cookies зберігаються в `httpx.Client` автоматично) повернув повний
+автентифікований HTML — перевірено підстрокою `7.95689` (реальний тариф) і `160026427`
+(особовий рахунок) у відповіді.
+
+### Парсинг тарифу — підтверджено реальним response
+
+`my.gas.ua` — НЕ Laravel Inertia (немає `data-page` атрибута), а server-rendered HTML
+із Vue-компонентами, куди дані вбудовані як HTML-escaped JSON в атрибуті. Знайдено
+наживо в `GET /home`:
+
+```html
+<personal-accounts-dropdown
+    user_info="{&quot;kodr&quot;:&quot;801685457&quot;,...,&quot;single_price&quot;:&quot;7.95689&quot;,...}"
+/>
+```
+
+Парсинг:
+
+```python
+import re, json, html
+
+m = re.search(r'<personal-accounts-dropdown\s+[^>]*user_info="([^"]*)"', home_html)
+if m is None:
+    # error: markup changed, no such component
+    ...
+user_info = json.loads(html.unescape(m.group(1)))
+price_raw = user_info.get("single_price")  # "7.95689" — рядок з крапкою, 5 знаків після коми
+```
+
+`single_price` — уже готова ціна за 1 м³ (для фіксованого тарифного плану дорівнює й
+`beforelimit_price`, і `afterlimit_price` — окремі поля на випадок ступінчастого
+тарифу, не актуальні для фіксованого плану цього акаунта, але варто прочитати саме
+`single_price`, а не одне з двох лімітних полів, бо саме воно відповідає видимому в
+UI "Ціна за 1 куб. м, грн").
+
+### Кроки автоматизації
+
+1. Логін (вище) → якщо `422`/будь-який статус ≠ `200`, або в тілі немає `{"url": "/home"}`
+   — `status=error` з повідомленням із response (`errors` dict), без розкриття пароля.
+2. `GET /home` під тією ж сесією → якщо `user_info` не знайдено в HTML — `status=error`
+   ("розмітка кабінету змінилась"), не тиха відмова.
+3. Розпарсити `single_price` з `user_info` (код вище).
 4. Знайти активний `ConnectionChargeLine` для сервісу `gas_supply` на поточний період
    (`_service_charge_line_for_period`, як у existing provider-функціях).
-5. `_apply_cabinet_tariff_observation(current_line, candidate_value=parsed_price,
+5. `_apply_cabinet_tariff_observation(current_line, candidate_value=Decimal(price_raw),
    checked_at=now_utc)` — **завжди**, коли значення успішно розпізнано. `price_per_unit`
    не чіпається ніколи автоматично.
 6. Статус: `updated`, якщо значення знайдено й записано; `error` — при провалі логіну чи
-   відсутності числа в HTML; `waiting` тут практично не потрібен (тариф завжди доступний
-   одразу після входу), на відміну від "Нараховано".
+   відсутності `single_price`; `waiting` тут не потрібен (тариф завжди доступний одразу
+   після входу).
 
 `effective_from` рядка `ConnectionChargeLine` — 1-ше число поточного місяця (стандартне
 правило проєкту), незалежно від "Період дії тарифного плану" кабінету (01.05-30.04) — це
@@ -195,17 +258,14 @@ ATP0928/Vodokanal — не в plaintext, не в логах. Реальний п
    для цього акаунта, чи ознака того, що дані лічильника підтягуються іншим шляхом (можливо,
    через inline-рядки таблиці показань, а не окрему картку). Не критично для тарифної
    автоматизації, але важливо перевірити перед тим, як будувати submit-автоматизацію.
-3. **Точний HTML-селектор ціни — знято (2026-09-04, живий вхід під реальними кредами).**
-   Підтверджено: "Ціна за 1 куб. м, грн" і значення "7.95689" — це два ОКРЕМІ сусідні
-   DOM-вузли (мітка й значення не в одному рядку "Мітка: значення", а послідовні
-   label/value елементи — той самий патерн, що й для "Тарифний план"/"Фіксований",
-   "Знижка"/"не надається" тощо в блоці "Мої умови"). Десятковий розділювач — крапка,
-   5 знаків після коми. Для парсингу сирого HTML (`httpx`+regex/BeautifulSoup, за зразком
-   ATP0928) орієнтир: знайти вузол з точним текстом мітки `"Ціна за 1 куб. м, грн"`, узяти
-   текст найближчого наступного текстового вузла/сиблінга як число. Точний CSS-клас/id не
-   знімався (інструментарій цього дослідження не дає сирого view-source під сесією) —
-   імплементації варто зняти сирий `httpx`-респонс `/home` під автентифікованою сесією
-   безпосередньо перед написанням регулярки, а не покладатись тільки на цей опис.
+3. ~~Точний HTML-селектор ціни~~ — **знято остаточно (2026-09-04, реальний httpx-логін +
+   реальний `GET /home`).** Ціна парситься не з видимого тексту, а з JSON-атрибута
+   `user_info` компонента `<personal-accounts-dropdown>` (ключ `single_price`) — див.
+   розділ "Архітектура" вище, код перевірений на реальній відповіді сервера.
+4. ~~Логін через httpx блокується Cloudflare Turnstile~~ — **знято (2026-09-04).**
+   Побоювання не справдилось: `POST /login` з полями `{"login", "password", "remember"}`
+   і стандартними Inertia/XSRF-заголовками успішно логінить без розв'язання капчі —
+   перевірено реальним запитом до продакшн-кабінету, сесія підтверджено автентифікована.
 
 ## Тестування
 

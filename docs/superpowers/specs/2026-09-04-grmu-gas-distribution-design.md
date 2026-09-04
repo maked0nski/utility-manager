@@ -155,37 +155,141 @@ document-запит `GET /accounting/data/history` (200). Це означає, �
 модалка "Внесіть показання" (досліджена вище) стає другою функцією цієї автоматизації,
 не лише тариф.
 
-1. `httpx.Client(follow_redirects=True)` → `GET /login`, знайти форму email+пароль →
-   `POST` на action форми з `cabinet_login`/`cabinet_password` (розшифрованим через
-   `decrypt_text`, як і для інших провайдерів) — той самий патерн, що й для `my.gas.ua`
-   і ATP0928. Google OAuth більше не задіяний (див. розділ вище) — звичайна форма логіну
-   тепер робоча альтернатива для цього ж облікового запису.
+**Наживо перевірено й підтверджено (2026-09-04) повний ланцюжок httpx-логіну й
+парсингу.** Побоювання щодо Cloudflare Turnstile CAPTCHA (сайт-кей
+`0x4AAAAAAAFPJffKyDAdAXCY` присутній у HTML) **не справдилось** — чистий httpx-запит
+без розв'язання капчі успішно логінить.
 
-   **Ендпоінт підтверджено наживо (2026-09-04, через `read_network_requests` під час
-   реального логауту/логіну):** форма шле `POST https://my.grmu.com.ua/login` (той самий
-   шлях, що й GET-сторінка форми — не окремий `/api/...`), відповідь 200, далі `GET /`
-   під тими ж cookies. Точні `name`-атрибути полів email/пароль у формі НЕ підтверджені
-   інструментами цього дослідження (доступний лише рендерений DOM/accessibility tree, не
-   сирий HTML) — перед імплементацією зняти сирий `httpx`-GET `/login` і знайти реальні
-   `name` полів (ймовірно `email`/`password`, за типовим Laravel-патерном, але це
-   здогад — перевірити).
-2. `GET /` під тією ж сесією → якщо знову форма логіну — авторизація не вдалась.
-3. Розпарсити з блоку "Мої умови" значення "Послуга з розподілу (місячна), грн" (138,43)
-   як кандидат тарифу.
-4. Знайти активний `ConnectionChargeLine` для сервісу `gas_distribution` на поточний період.
-5. `_apply_cabinet_tariff_observation(current_line, candidate_value=parsed_monthly_amount,
+### Логін — підтверджено реальним запитом
+
+Кабінет — **Laravel + Inertia.js** (підтверджено: `<title inertia>`, вбудований
+`const Ziggy={...routes...}` у HTML). CSRF передається не прихованим полем форми, а
+через cookie `XSRF-TOKEN` → заголовок `X-XSRF-TOKEN` (стандартний Laravel/Sanctum SPA
+патерн).
+
+```python
+import httpx
+from urllib.parse import unquote
+
+with httpx.Client(follow_redirects=True, timeout=20.0, headers={
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept-Language": "uk,en-US;q=0.9,en;q=0.8",
+}) as client:
+    client.get("https://my.grmu.com.ua/login")  # встановлює XSRF-TOKEN cookie
+    xsrf_token = unquote(client.cookies.get("XSRF-TOKEN"))
+    resp = client.post(
+        "https://my.grmu.com.ua/login",
+        headers={
+            "X-XSRF-TOKEN": xsrf_token,
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Inertia": "true",
+            "X-Inertia-Version": "1",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Referer": "https://my.grmu.com.ua/login",
+            "Origin": "https://my.grmu.com.ua",
+        },
+        json={"email": cabinet_login, "password": cabinet_password, "remember": False},
+    )
+    # успіх: resp.status_code == 409, заголовок X-Inertia-Location == "https://my.grmu.com.ua"
+    # (саме так Inertia сигналізує "онови сторінку повністю" після stateful login —
+    #  це НЕ помилка, попри код 409; перевіряти успіх треба наступним GET /, не кодом POST)
+```
+
+**Ключова відмінність від типового REST:** успішний логін повертає `409`, не `200`/`302` —
+це нормальна Inertia-семантика (`X-Inertia-Location` замість звичайного redirect), не
+помилка. Перевірено: подальший `GET /` під тією ж сесією (cookies в `httpx.Client`
+зберігаються автоматично) повернув повний автентифікований HTML з реальними даними
+рахунку (`0710333638`, `138.43`).
+
+### Парсинг тарифу — підтверджено реальним response, окремий запит НЕ потрібен
+
+Дані "Мої умови" вбудовані у **спільний Inertia-проп `auth.info`**, присутній у
+`data-page` атрибуті **будь-якої** автентифікованої сторінки (не лише головної) —
+окремого XHR/API-виклику не існує, здогад із першого дослідницького проходу про
+"Inertia data-page на кореневому div" підтвердився повністю:
+
+```python
+import re, json, html
+
+m = re.search(r'data-page="([^"]*)"', page_html)
+page = json.loads(html.unescape(m.group(1)))
+info = page["props"]["auth"]["info"]
+# info = {
+#   "PERACC": "0710333638          ", "TARIF": "2,232",
+#   "DISTR_SUM": "138,43", "DISTR_MONTH_V": "62,02",
+#   "DISTR_YEAR_V": "744,27", "PERIOD": "01.10.2024 - 30.09.2025", ...
+# }
+distr_sum_raw = info.get("DISTR_SUM")  # "138,43" — КОМА як розділювач, не крапка!
+```
+
+**Важливо:** на відміну від `my.gas.ua` (крапка), тут десятковий розділювач — **кома**
+(`"138,43"`, `"2,232"`) — перед `Decimal()` обов'язково замінити `,` → `.`
+(`Decimal(distr_sum_raw.replace(",", "."))`), інакше `Decimal("138,43")` кине
+`InvalidOperation`.
+
+### Кроки автоматизації (тариф)
+
+1. Логін (вище) → якщо `GET /` після POST все ще показує `Auth/Login` як
+   `page["component"]` (а не автентифіковану сторінку) — `status=error`, без розкриття
+   пароля.
+2. Розпарсити `data-page` → `props.auth.info.DISTR_SUM` (код вище). Якщо ключ
+   відсутній — `status=error` ("розмітка кабінету змінилась"), не тиха відмова.
+3. `distr_sum = Decimal(distr_sum_raw.replace(",", "."))`.
+4. Знайти активний `ConnectionChargeLine` для сервісу `gas_distribution` на поточний
+   період.
+5. `_apply_cabinet_tariff_observation(current_line, candidate_value=distr_sum,
    checked_at=now_utc)` — завжди, коли значення успішно розпізнано; `price_per_unit`
    ніколи не пишеться автоматично (те саме жорстке правило, що й для всіх інших
    провайдерів).
 6. Опційно — крос-перевірка з `/accounting/data/history`: якщо останній непорожній рядок
-   "Нараховано" не збігається з поточним "Мої умови", це сигнал про те, що газовий рік
+   "Нараховано" не збігається з поточним `DISTR_SUM`, це сигнал про те, що газовий рік
    змінився і норму варто перевірити уважніше (можна залишити як просте попередження в
    `auto_check_message`, не як окрему бізнес-логіку).
 
-Автентифікація для фонового воркера більше не є окремою проблемою (Google OAuth знято,
-див. розділ вище) — `ConnectionChargeLine` для `gas_distribution` можна поповнювати за
-звичайним cron-розкладом, як і для інших провайдерів, щойно `cabinet_login`/
-`cabinet_password_encrypted` для цього облікового запису збережені.
+Автентифікація для фонового воркера більше не є окремою проблемою (ні Google OAuth, ні
+Cloudflare Turnstile не блокують — обидва зняті вище) — `ConnectionChargeLine` для
+`gas_distribution` технічно можна поповнювати за звичайним cron-розкладом... **АЛЕ
+власник проєкту явно попросив: спершу НЕ ставити на регулярний крон, а лише на
+реакцію на кнопку "Оновити тарифи"** (обережність щодо частоти автоматичних звернень
+до кабінету, попри те, що жоден блок не спостерігався в цьому дослідженні).
+
+### Розгортання: лише кнопка, без регулярного крону — новий спільний прапорець
+
+Це вимагає **нової інфраструктурної можливості**, якої зараз немає в коді: сьогодні
+`run_tariff_auto_checks()` (`tariff_auto_check.py:1275`) обробляє ВСІ увімкнені
+`ApartmentAutomation` однаково, незалежно від того, викликана вона годинним OS-крон
+завданням на VPS (`trigger_mode="scheduled"`, дефолт) чи кнопкою
+"Оновити тарифи"/"Запустити плановий цикл" (`trigger_mode="manual"`, явно передається
+з `/admin/automations/run-cycle`).
+
+Рішення: нове поле `AutomationTemplate.cron_eligible: bool = True` (дефолт `True` —
+жодна поведінка для GUC/ATP0928/Vodokanal не змінюється). Для шаблонів
+`gas_ua_supply` і `grmu_if_distribution` виставляємо `cron_eligible=False` одразу при
+створенні `AutomationTemplate`. У циклах вибору автоматизацій (`tariff_auto_check.py`,
+і accrual-цикл ~рядок 1287-1296, і submit-цикл ~рядок 1313+) додається пропуск:
+
+```python
+for automation in automations:
+    if trigger_mode != "manual" and automation.template is not None and not automation.template.cron_eligible:
+        continue
+    run_tariff_auto_check_for_automation(db, automation=automation, now_utc=now_utc)
+    processed_accrual_automations += 1
+```
+
+(той самий патерн для `submit_automations`-циклу нижче). Результат: OS-крон
+(`trigger_mode="scheduled"`) мовчки пропускає ці дві автоматизації; кнопка
+"Оновити тарифи" на вкладці "Розрахунок" і "Запустити плановий цикл" на вкладці
+"Автоматизації" (обидві передають `trigger_mode="manual"`) — обробляють їх як звичайно.
+
+**Це спільна зміна для обох "газових" гілок** (gas-supply на `my.gas.ua` теж має бути
+cron-виключеною за тим самим проханням власника). Оскільки обидві гілки зараз
+відгалужені від `master` незалежно одна від одної, кожен план реалізації додає цю саму
+зміну (ідемпотентна колонка + однаковий пропуск у циклі) — якщо один PR зіллється
+раніше за інший, другий отримає тривіальний git-конфлікт на одному доданому рядку в
+`_ensure_apartment_profile_columns`-подібному місці, легко вирішуваний (лишити один
+варіант) — той самий підхід, що вже використовувався в проєкті для паралельних
+провайдерських гілок.
 
 ### Подача показників лічильника
 
@@ -245,6 +349,9 @@ document-запит `GET /accounting/data/history` (200). Це означає, �
 - `supports_accrual`: `True`.
 - `supports_meter_submit`: **`True`** (змінено — власник проєкту підтвердив, що подача
   показників автоматизується разом з тарифом у цій же автоматизації).
+- `cron_eligible`: **`False`** (нове поле, див. розділ "Розгортання" вище) — автоматизація
+  працює лише за кнопкою "Оновити тарифи"/"Запустити плановий цикл", не за годинним
+  OS-крон завданням.
 
 ## Що НЕ змінюється
 
@@ -265,11 +372,14 @@ document-запит `GET /accounting/data/history` (200). Це означає, �
    кабінет" вище: власник проєкту перереєстрував той самий обліковий запис на email+пароль,
    Google більше не потрібен для автоматизації.
 
-2. **Точна структура вбудованих даних `/accounting/data/history`.** Підтверджено лише, що
-   немає окремого XHR/API-виклику в перехопленому трафіку; сам механізм вбудовування
-   (Inertia `data-page` чи щось інше) не підтверджено сирим переглядом HTML. Потребує
-   окремої перевірки перед імплементацією. (Не критично, якщо реалізація бере тариф лише
-   з "Мої умови" — сторінка `/` без React Router routing, звичайний server-render.)
+2. ~~Точна структура вбудованих даних~~ — **знято (2026-09-04, реальний httpx-логін +
+   реальний `GET /`).** Підтверджено: `data-page` атрибут з Inertia JSON, тариф у
+   `props.auth.info.DISTR_SUM` — див. розділ "Архітектура" вище. Окремий XHR/API-виклик
+   дійсно не потрібен — здогад підтвердився повністю.
+
+   ~~Cloudflare Turnstile блокує httpx-логін~~ — **теж знято**, див. розділ
+   "Архітектура" вище: реальний `POST /login` без розв'язання капчі успішно
+   автентифікував сесію.
 
 3. **Розбіжність часу підтвердження показника між двома кабінетами** (11287 вже видно як
    "попереднє" на `my.grmu.com.ua`, але ще "Очікуємо" на `my.gas.ua`) — не критично для

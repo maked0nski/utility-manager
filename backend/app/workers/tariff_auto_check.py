@@ -8,7 +8,7 @@ import json
 import re
 import socket
 import time
-from urllib.parse import urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -765,6 +765,61 @@ def _fetch_atp0928_cabinet_html(
         if 'name="log"' in html and 'name="pwd"' in html:
             return None, "ATP-0928 authorization failed (invalid login/password)"
         return html, None
+
+
+GAS_UA_LOGIN_URL = "https://my.gas.ua/login"
+GAS_UA_HOME_URL = "https://my.gas.ua/home"
+
+
+def _fetch_gas_ua_home_html(
+    *,
+    cabinet_login: str,
+    cabinet_password: str,
+) -> tuple[str | None, str | None]:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "uk,en-US;q=0.9,en;q=0.8",
+    }
+    with httpx.Client(follow_redirects=True, timeout=20.0, headers=headers) as client:
+        login_page = client.get(GAS_UA_LOGIN_URL)
+        if login_page.status_code != 200:
+            return None, f"my.gas.ua login page HTTP {login_page.status_code}"
+        csrf_match = re.search(r'name="csrf-token" content="([^"]*)"', login_page.text)
+        csrf_token = csrf_match.group(1) if csrf_match else ""
+        xsrf_cookie = client.cookies.get("XSRF-TOKEN")
+        if not xsrf_cookie:
+            return None, "my.gas.ua login page did not set XSRF-TOKEN cookie"
+        xsrf_token = unquote(xsrf_cookie)
+
+        post_headers = {
+            "X-XSRF-TOKEN": xsrf_token,
+            "X-CSRF-TOKEN": csrf_token,
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Inertia": "true",
+            "X-Inertia-Version": "1",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Referer": GAS_UA_LOGIN_URL,
+            "Origin": "https://my.gas.ua",
+        }
+        auth = client.post(
+            GAS_UA_LOGIN_URL,
+            headers=post_headers,
+            json={"login": cabinet_login, "password": cabinet_password, "remember": False},
+        )
+        if auth.status_code != 200:
+            return None, f"my.gas.ua authorization failed (HTTP {auth.status_code})"
+
+        dashboard = client.get(GAS_UA_HOME_URL)
+        if dashboard.status_code != 200:
+            return None, f"my.gas.ua cabinet HTTP {dashboard.status_code}"
+        html_text = dashboard.text
+        if "personal-accounts-dropdown" not in html_text:
+            return None, "my.gas.ua authorization failed (session not authenticated)"
+        return html_text, None
 
 
 def _run_atp0928(

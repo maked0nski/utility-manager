@@ -36,3 +36,18 @@ def test_returns_none_when_single_price_key_missing():
 def test_returns_none_when_single_price_is_empty_string():
     html = '<personal-accounts-dropdown user_info="{&quot;single_price&quot;:&quot;&quot;}" />'
     assert _parse_gas_ua_price_from_html(html) is None
+
+
+def test_returns_none_when_user_info_is_json_array():
+    html = '<personal-accounts-dropdown user_info="[]" />'
+    assert _parse_gas_ua_price_from_html(html) is None
+
+
+def test_returns_none_when_user_info_is_json_scalar():
+    html = '<personal-accounts-dropdown user_info="123" />'
+    assert _parse_gas_ua_price_from_html(html) is None
+
+
+def test_returns_none_when_user_info_is_json_null():
+    html = '<personal-accounts-dropdown user_info="null" />'
+    assert _parse_gas_ua_price_from_html(html) is None

@@ -371,6 +371,8 @@ def _parse_gas_ua_price_from_html(html: str) -> Decimal | None:
         user_info = json.loads(unescape(match.group(1)))
     except (json.JSONDecodeError, ValueError):
         return None
+    if not isinstance(user_info, dict):
+        return None
     raw = user_info.get("single_price")
     if not raw:
         return None

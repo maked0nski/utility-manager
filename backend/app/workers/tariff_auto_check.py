@@ -546,6 +546,20 @@ def _is_atp0928_setting(setting: BindingSetting) -> bool:
     return ("atp0928.if.ua" in haystack) or ("атп-0928" in haystack) or (setting.service_code == ATP0928_SERVICE_CODE)
 
 
+def _is_gas_ua_setting(setting: BindingSetting) -> bool:
+    adapter_code = _provider_adapter_code(setting)
+    if adapter_code == "gas_ua_supply":
+        return True
+    haystack = " ".join(
+        [
+            setting.provider_company or "",
+            setting.cabinet_url or "",
+            setting.service_code or "",
+        ]
+    ).casefold()
+    return "my.gas.ua" in haystack
+
+
 def _connection_active_on(connection: ApartmentServiceConnection, target_date: date) -> bool:
     if connection.started_at and connection.started_at > target_date:
         return False
@@ -820,6 +834,65 @@ def _fetch_gas_ua_home_html(
         if "personal-accounts-dropdown" not in html_text:
             return None, "my.gas.ua authorization failed (session not authenticated)"
         return html_text, None
+
+
+def _run_gas_ua(
+    db: Session,
+    *,
+    setting: BindingSetting,
+    now_utc: datetime,
+) -> None:
+    cabinet_login = (setting.cabinet_login or "").strip()
+    cabinet_password = decrypt_text(setting.cabinet_password_encrypted) or ""
+    if not cabinet_login or not cabinet_password:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "cabinet credentials are missing"
+        setting.auto_check_last_checked_at = now_utc
+        return
+
+    try:
+        html_text, error = _fetch_gas_ua_home_html(
+            cabinet_login=cabinet_login,
+            cabinet_password=cabinet_password,
+        )
+    except (httpx.HTTPError, OSError, socket.gaierror) as exc:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = f"my.gas.ua network error: {exc}"
+        setting.auto_check_last_checked_at = now_utc
+        return
+
+    setting.auto_check_last_checked_at = now_utc
+    if error or html_text is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = (error or "my.gas.ua fetch failed")[:255]
+        return
+
+    price = _parse_gas_ua_price_from_html(html_text)
+    if price is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "На сторінці /home не знайдено single_price"
+        return
+
+    period_start = _month_start(*_prev_month(now_utc.year, now_utc.month)).date()
+    current_line = _service_charge_line_for_period(
+        db,
+        apartment_id=setting.apartment_id,
+        service_name=setting.service_name,
+        period_start=period_start,
+        connection_id=setting.connection_id,
+        service_catalog_id=setting.service_catalog_id,
+    )
+    if current_line is None:
+        setting.auto_check_status = "error"
+        setting.auto_check_message = "Current charge line for period not found"
+        return
+
+    _apply_cabinet_tariff_observation(current_line, candidate_value=price, checked_at=now_utc)
+    setting.auto_check_completed_for_period = True
+    setting.auto_check_last_value_raw = price.quantize(Decimal("0.0001"))
+    setting.auto_check_last_value_rounded = price.quantize(Decimal("0.01"))
+    setting.auto_check_status = "updated"
+    setting.auto_check_message = f"Кабінет: Ціна за 1 куб. м = {price.quantize(Decimal('0.01'))} грн"
 
 
 def _run_atp0928(
@@ -1710,6 +1783,10 @@ def _run_single_setting(
             local_now=local_now,
             force_mode=mode,
         )
+        return
+
+    if _is_gas_ua_setting(setting):
+        _run_gas_ua(db, setting=setting, now_utc=now_utc)
         return
 
     if mode == "readings":

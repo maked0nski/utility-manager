@@ -1050,6 +1050,7 @@ class AutomationTemplateCreate(BaseModel):
     description: str | None = None
     supports_accrual: bool = True
     supports_meter_submit: bool = False
+    cron_eligible: bool = True
     is_active: bool = True
 
 
@@ -1069,6 +1070,7 @@ class AutomationTemplateOut(BaseModel):
     description: str | None = None
     supports_accrual: bool = True
     supports_meter_submit: bool = False
+    cron_eligible: bool = True
     is_active: bool = True
     created_at: datetime
 

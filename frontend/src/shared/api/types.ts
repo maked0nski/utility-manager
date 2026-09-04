@@ -528,6 +528,7 @@ export interface AutomationTemplateItem {
   description?: string | null;
   supports_accrual: boolean;
   supports_meter_submit: boolean;
+  cron_eligible: boolean;
   is_active: boolean;
   created_at: string;
 }

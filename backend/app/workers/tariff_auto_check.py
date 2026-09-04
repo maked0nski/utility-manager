@@ -841,6 +841,7 @@ def _run_gas_ua(
     *,
     setting: BindingSetting,
     now_utc: datetime,
+    local_now: datetime,
 ) -> None:
     cabinet_login = (setting.cabinet_login or "").strip()
     cabinet_password = decrypt_text(setting.cabinet_password_encrypted) or ""
@@ -857,7 +858,7 @@ def _run_gas_ua(
         )
     except (httpx.HTTPError, OSError, socket.gaierror) as exc:
         setting.auto_check_status = "error"
-        setting.auto_check_message = f"my.gas.ua network error: {exc}"
+        setting.auto_check_message = f"my.gas.ua network error: {exc}"[:255]
         setting.auto_check_last_checked_at = now_utc
         return
 
@@ -873,7 +874,7 @@ def _run_gas_ua(
         setting.auto_check_message = "На сторінці /home не знайдено single_price"
         return
 
-    period_start = _month_start(*_prev_month(now_utc.year, now_utc.month)).date()
+    period_start = _month_start(*_prev_month(local_now.year, local_now.month)).date()
     current_line = _service_charge_line_for_period(
         db,
         apartment_id=setting.apartment_id,
@@ -1786,7 +1787,7 @@ def _run_single_setting(
         return
 
     if _is_gas_ua_setting(setting):
-        _run_gas_ua(db, setting=setting, now_utc=now_utc)
+        _run_gas_ua(db, setting=setting, now_utc=now_utc, local_now=local_now)
         return
 
     if mode == "readings":

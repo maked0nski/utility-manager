@@ -1227,6 +1227,7 @@ def test_service_connections_endpoint_includes_cabinet_tariff_fields():
     line = db.get(ConnectionChargeLine, line_id)
     line.cabinet_price_per_unit = Decimal("225.0000")
     line.cabinet_checked_at = datetime(2026, 9, 3, 15, 24, 49)
+    line.cabinet_price_is_estimated = True
     db.commit()
     db.close()
 
@@ -1235,6 +1236,7 @@ def test_service_connections_endpoint_includes_cabinet_tariff_fields():
     listed_line = listed.json()[0]["charge_lines"][0]
     assert listed_line["cabinet_price_per_unit"] == "225.0000"
     assert listed_line["cabinet_checked_at"] is not None
+    assert listed_line["cabinet_price_is_estimated"] is True
 
 
 def test_cabinet_password_reveal_requires_write_access():

@@ -24,6 +24,7 @@ type DetailBundle = {
     short_address?: string;
     apartment_id: number;
     utility_balance: Record<string, string>;
+    cabinet_markup_percent?: string | number | null;
     tenant?: unknown;
   };
   meters: MeterItem[];

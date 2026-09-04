@@ -3,7 +3,7 @@ import { In } from "@/shared/ui/form-controls";
 import { Modal } from "@/shared/ui/modal";
 import type { ChangeEvent, Dispatch, RefObject, SetStateAction } from "react";
 import type { BillingHistoryItem, CalculationRow, MeterExpectedRegistersResult } from "@/shared/api/types";
-import { evaluateCabinetTariff } from "../cabinet-tariff";
+import { evaluateCabinetTariff, type CatchUpSuggestion } from "../cabinet-tariff";
 
 type RowDraft = {
   previous_reading?: string;
@@ -18,6 +18,7 @@ interface DetailLike {
     previous_month_debt: string;
     current_balance: string;
   };
+  cabinet_markup_percent?: string | number | null;
   calc_locked?: boolean;
 }
 
@@ -57,6 +58,7 @@ interface CalculationTabProps {
   saveRow: (row: CalculationRow) => Promise<void>;
   recalcMonth: () => Promise<void>;
   confirmMonth: () => Promise<void>;
+  runAutomationCycle: () => Promise<void>;
   reopenMonth: (reason: string) => Promise<void>;
   resetSortDefault: () => void;
   accr: number;
@@ -70,7 +72,10 @@ interface CalculationTabProps {
   setBatchReadingDraft: Dispatch<SetStateAction<Record<string, Record<string, string>>>>;
   saveBatchReadings: () => Promise<void>;
   batchReadingSaving?: boolean;
-  cabinetTariffByLineId: Record<number, { price: number; checkedAt: string }>;
+  cabinetTariffByLineId: Record<
+    number,
+    { price: number; checkedAt: string; isEstimated: boolean; catchUp: CatchUpSuggestion | null }
+  >;
 }
 
 type DisplayRow =
@@ -104,6 +109,7 @@ export function CalculationTab({
   saveRow,
   recalcMonth,
   confirmMonth,
+  runAutomationCycle,
   reopenMonth,
   resetSortDefault,
   accr,
@@ -218,6 +224,7 @@ export function CalculationTab({
   const [reopenModalOpen, setReopenModalOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
   const [reopenSaving, setReopenSaving] = useState(false);
+  const [updatingTariffs, setUpdatingTariffs] = useState(false);
 
   const handleLockAction = async () => {
     if (!detail.calc_locked) {
@@ -372,23 +379,40 @@ export function CalculationTab({
                     )}
                     {r.line_id != null && cabinetTariffByLineId[r.line_id] ? (() => {
                       const cabinet = cabinetTariffByLineId[r.line_id];
-                      const status = evaluateCabinetTariff(Number(r.unit_price), cabinet);
+                      const markupPercent = Number(detail.cabinet_markup_percent) || 0;
+                      const effectivePrice = cabinet.price + (cabinet.catchUp?.amount ?? 0);
+                      const status = evaluateCabinetTariff(
+                        Number(r.unit_price),
+                        { price: effectivePrice, checkedAt: cabinet.checkedAt },
+                        markupPercent,
+                      );
                       return (
                         <div className="helper">
-                          <span className={`status-pill ${status.freshness === "fresh" ? "ok" : "error"}`}>
-                            Кабінет: {money(cabinet.price)}
+                          <span
+                            className={`status-pill ${
+                              cabinet.isEstimated ? "draft" : status.freshness === "fresh" ? "ok" : "error"
+                            }`}
+                          >
+                            {cabinet.isEstimated ? "Оцінка з попер. місяця: " : "Кабінет: "}
+                            {money(cabinet.price)}
                           </span>
+                          {cabinet.catchUp ? (
+                            <div className="helper">
+                              З {cabinet.catchUp.sourcePeriod} фактично вийшло на {money(cabinet.catchUp.amount)} грн
+                              більше — рекомендовано додати.
+                            </div>
+                          ) : null}
                           {status.floorViolation ? (
                             <button
                               type="button"
                               className="status-pill draft"
-                              title="Мій тариф має бути не менше ніж на 10% вищим за тариф з кабінету. Клік — підставити рекомендоване значення."
+                              title="Мій тариф має бути не нижчим за тариф з кабінету плюс налаштована націнка. Клік — підставити рекомендоване значення."
                               onClick={() => {
                                 if (!e) start(r);
                                 setDraft((s) => ({ ...s, unit_price: String(status.suggestedPrice) }));
                               }}
                             >
-                              ⚠ нижче на 10%+ · рекомендовано {money(status.suggestedPrice)}
+                              ⚠ нижче норми · рекомендовано {money(status.suggestedPrice)}
                             </button>
                           ) : null}
                         </div>
@@ -421,6 +445,20 @@ export function CalculationTab({
       <div className="row-inline top-gap">
         <div className="row-actions">
           <button onClick={recalcMonth}>Заповнити місяць послугами</button>
+          <button
+            className="secondary"
+            disabled={updatingTariffs}
+            onClick={async () => {
+              setUpdatingTariffs(true);
+              try {
+                await runAutomationCycle();
+              } finally {
+                setUpdatingTariffs(false);
+              }
+            }}
+          >
+            {updatingTariffs ? "Оновлення..." : "Оновити тарифи"}
+          </button>
           <button className="secondary" onClick={() => void openBatchReadingModal()}>
             Внести показники
           </button>

@@ -206,6 +206,7 @@ def _service_connection_out(row: ApartmentServiceConnection, db: Session) -> Apa
                 is_active=line.is_active,
                 cabinet_price_per_unit=line.cabinet_price_per_unit,
                 cabinet_checked_at=line.cabinet_checked_at,
+                cabinet_price_is_estimated=line.cabinet_price_is_estimated,
                 created_at=line.created_at,
             )
             for line in charge_lines
@@ -260,6 +261,7 @@ def _apply_apartment_profile(apartment: Apartment, payload: ApartmentCreate) -> 
     apartment.latitude = payload.latitude
     apartment.longitude = payload.longitude
     apartment.timezone = payload.timezone or "Europe/Kyiv"
+    apartment.cabinet_markup_percent = payload.cabinet_markup_percent
     apartment.location_note = _clean_optional_text(payload.location_note)
     apartment.object_notes = _clean_optional_text(payload.object_notes)
     return full_address

@@ -44,6 +44,7 @@ class ApartmentCreate(BaseModel):
     latitude: Decimal | None = Field(default=None, ge=-90, le=90)
     longitude: Decimal | None = Field(default=None, ge=-180, le=180)
     timezone: str = Field(default="Europe/Kyiv", min_length=3, max_length=64)
+    cabinet_markup_percent: Decimal | None = Field(default=None, ge=0, le=100)
     location_note: str | None = None
     object_notes: str | None = None
 
@@ -71,6 +72,7 @@ class ApartmentOut(BaseModel):
     longitude: Decimal | None = None
     google_maps_url: str | None = None
     timezone: str = "Europe/Kyiv"
+    cabinet_markup_percent: Decimal | None = None
     location_note: str | None = None
     object_notes: str | None = None
 
@@ -199,6 +201,7 @@ class ConnectionChargeLineOut(BaseModel):
     is_active: bool
     cabinet_price_per_unit: Decimal | None = None
     cabinet_checked_at: datetime | None = None
+    cabinet_price_is_estimated: bool = False
     created_at: datetime
 
 
@@ -901,6 +904,7 @@ class ApartmentDetailOut(BaseModel):
     longitude: Decimal | None = None
     google_maps_url: str | None = None
     timezone: str = "Europe/Kyiv"
+    cabinet_markup_percent: Decimal | None = None
     location_note: str | None = None
     object_notes: str | None = None
     tenant: TenantOut | None

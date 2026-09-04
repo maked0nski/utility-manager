@@ -423,6 +423,17 @@ export function PropertyTab({
               onChange={(e) => setAp((s) => ({ ...s, room_count: e.target.value }))}
             />
             <In
+              label="Націнка над тарифом з кабінету, %"
+              tip="Мінімальний відсоток, на який моя ціна має перевищувати тариф з кабінету постачальника"
+              type="number"
+              min="0"
+              max="100"
+              step="0.01"
+              placeholder="10"
+              value={ap.cabinet_markup_percent}
+              onChange={(e) => setAp((s) => ({ ...s, cabinet_markup_percent: e.target.value }))}
+            />
+            <In
               label="К-сть прописаних"
               tip="Кількість зареєстрованих мешканців"
               type="number"

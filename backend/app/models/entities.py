@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 from urllib.parse import quote_plus
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, event
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Index, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -260,19 +260,13 @@ class AutomationTemplate(Base):
     supports_accrual: Mapped[bool] = mapped_column(Boolean, default=True)
     supports_meter_submit: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    cron_eligible: Mapped[bool] = mapped_column(Boolean, default=lambda: True)
+    cron_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     provider: Mapped[Provider | None] = relationship(back_populates="automation_templates")
     apartment_automations: Mapped[list[ApartmentAutomation]] = relationship(
         back_populates="template", cascade="all, delete-orphan"
     )
-
-
-@event.listens_for(AutomationTemplate, "init")
-def receive_init(target, args, kwargs):
-    if "cron_eligible" not in kwargs:
-        kwargs["cron_eligible"] = True
 
 
 class ApartmentAutomation(Base):

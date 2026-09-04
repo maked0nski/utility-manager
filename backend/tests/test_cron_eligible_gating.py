@@ -1,7 +1,16 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.db.base import Base
 from app.models import ApartmentAutomation, AutomationTemplate
+
+TEST_DATABASE_URL = "sqlite:///:memory:"
+
+engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def _make_automation(cron_eligible: bool) -> ApartmentAutomation:
@@ -23,8 +32,18 @@ def _make_automation(cron_eligible: bool) -> ApartmentAutomation:
 
 
 def test_cron_eligible_defaults_to_true():
-    template = AutomationTemplate(code="t", name="T", supports_accrual=True, supports_meter_submit=False, is_active=True)
-    assert template.cron_eligible is True
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+    try:
+        template = AutomationTemplate(
+            code="t", name="T", supports_accrual=True, supports_meter_submit=False, is_active=True
+        )
+        db.add(template)
+        db.flush()
+        assert template.cron_eligible is True
+    finally:
+        db.close()
+        Base.metadata.drop_all(bind=engine)
 
 
 def test_scheduled_trigger_skips_cron_ineligible_automation():

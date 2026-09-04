@@ -464,7 +464,9 @@ def _run_gas_ua(
     setting.auto_check_message = f"Кабінет: Ціна за 1 куб. м = {price.quantize(Decimal('0.01'))} грн"
 ```
 
-Note: `period_start` above resolves to the **previous** month (`_prev_month(now_utc.year, now_utc.month)`), matching every other provider's convention in this file — `ConnectionChargeLine` periods represent the month being billed (1st–5th billing cycle bills the previous month), so the tariff observation must land on that same previous-month line even though the cabinet itself always shows the *current* live price (the design's "always available, no waiting" note is about not needing a `waiting` status while fetching — it doesn't change which period the observation is recorded against).
+Note: `period_start` above resolves to the **previous** month. **Correction from the final whole-branch review:** the claim that this "matches every other provider's convention in this file" was wrong — `_run_atp0928` and `_run_vodokanal` both resolve their period from the *current* month (`date(local_now.year, local_now.month, 1)`); only the generic VisualService fallback branch (and `AUTOMATION_TEMPLATE.md`'s own stated rule, "target period: previous month") use the previous month. Previous-month is still the *correct* choice here — `ConnectionChargeLine` periods represent the month being billed (the 1st–5th billing cycle bills the previous month) — just don't cite the wrong precedent when building the next provider off this one.
+
+**Also corrected:** use `local_now` (already computed by `_run_single_setting` and passed to sibling runners like `_run_atp0928`/`_run_vodokanal`), not `now_utc`, when deriving `_prev_month(...)`. Using UTC here is a real bug: for roughly the first few hours of Kyiv local time on the 1st of a month, `now_utc` is still in the *prior* calendar month, so the observation would land two months back from where `_run_single_setting` already computed `target_year`/`target_month` to be (it derives those from `local_now`, not `now_utc`). Thread `local_now` into `_run_gas_ua`'s signature and use it for period resolution, matching every sibling provider.
 
 In `_run_single_setting` (~line 1587), find the existing dispatch chain:
 ```python
@@ -505,11 +507,11 @@ git commit -m "feat(tariff-worker): wire my.gas.ua tariff automation into the di
 
 - [ ] **Step 1: Create the `AutomationTemplate` via the admin UI**
 
-Log into the admin app, go to the Автоматизації tab, create a new automation template with: `code=gas_ua_supply`, `cabinet_url=https://my.gas.ua/login`, `utility_type=gas`, `supports_accrual=True`, `supports_meter_submit=False`, and — critically — confirm the new `cron_eligible` field defaults to `True` in the create form; explicitly set it to `False` for this template (if the admin UI doesn't yet expose this field, set it directly in the database for this one row: `UPDATE automation_templates SET cron_eligible = FALSE WHERE code = 'gas_ua_supply';` — exposing it in the UI is out of scope for this plan, a manual DB update is acceptable for this one-off setup).
+Log into the admin app, go to the Автоматизації tab, create a new automation template with: `code=gas_ua_supply`, `cabinet_url=https://my.gas.ua/login`, `utility_type=gas`, `supports_accrual=True`, `supports_meter_submit=False`, and **`cron_eligible=False`** — the final whole-branch review found the plan's original wording here ("set it via a manual DB UPDATE, exposing it in the UI is out of scope") left this provider's core "never on the hourly cron" promise unreachable through any real admin action, so a follow-up fix task made `cron_eligible` a genuine field in the create/update forms and API — use that checkbox/field directly, do not fall back to a manual SQL statement.
 
 - [ ] **Step 2: Connect the template to the relevant apartment**
 
-Using the existing "Підключити до об'єкта" flow, connect this template to the apartment that has the `gas_supply` service connection, with the real `cabinet_login`/`cabinet_password` for `my.gas.ua`.
+Using the existing "Підключити до об'єкта" flow, connect this template to the apartment that has the `gas_supply` service connection, with the real `cabinet_login`/`cabinet_password` for `my.gas.ua`. **Also explicitly set `cabinet_url=https://my.gas.ua/login` on this automation/connection row itself** (not just on the template) — `_is_gas_ua_setting`'s dispatch match falls back to a substring check against `automation.cabinet_url` (via the binding built in `_build_automation_bindings`), not the template's `cabinet_url`, so leaving this blank on the automation row causes the run to silently fall through to the generic VisualService branch and fail with "cabinet_url is empty" even though the template looks correctly configured.
 
 - [ ] **Step 3: Trigger a manual run and verify**
 
